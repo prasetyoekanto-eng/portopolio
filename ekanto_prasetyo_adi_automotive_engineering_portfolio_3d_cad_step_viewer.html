@@ -1,0 +1,2439 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ekanto Prasetyo Adi | Product Design & Development Engineer — Automotive Wheels & 3D CAD Viewer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Plus Jakarta Sans, Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <!-- Font Awesome for clean engineering icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Three.js (r128) & OrbitControls & RoomEnvironment -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
+
+    <!-- occt-import-js (OpenCascade WASM untuk parsing file .STEP / .STP langsung di browser) -->
+    <script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.22/dist/occt-import-js.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Plus Jakarta Sans', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        carbon: {
+                            950: '#070A0F',
+                            900: '#0B0F17',
+                            850: '#0F1520',
+                            800: '#131926',
+                            700: '#1C2538',
+                        },
+                        electric: {
+                            400: '#38BDF8',
+                            500: '#0EA5E9',
+                            600: '#0284C7',
+                        },
+                        ambertech: {
+                            400: '#FBBF24',
+                            500: '#F59E0B',
+                            600: '#D97706',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Precision CAD Blueprint Background Grid */
+        body {
+            background-color: #0B0F17;
+            color: #E2E8F0;
+            background-image: 
+                linear-gradient(to right, rgba(14, 165, 233, 0.04) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(14, 165, 233, 0.04) 1px, transparent 1px),
+                linear-gradient(to right, rgba(14, 165, 233, 0.08) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(14, 165, 233, 0.08) 1px, transparent 1px);
+            background-size: 24px 24px, 24px 24px, 120px 120px, 120px 120px;
+            background-position: -1px -1px;
+        }
+
+        /* Subtle glow effects */
+        .cad-card {
+            background: rgba(19, 25, 38, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.14);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .cad-card:hover {
+            border-color: rgba(14, 165, 233, 0.45);
+            box-shadow: 0 12px 32px -8px rgba(14, 165, 233, 0.15);
+            transform: translateY(-2px);
+        }
+
+        /* Technical corner brackets */
+        .bracket-box {
+            position: relative;
+        }
+        .bracket-box::before, .bracket-box::after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-color: #0EA5E9;
+            pointer-events: none;
+            opacity: 0.7;
+            z-index: 15;
+        }
+        .bracket-box::before {
+            top: -1px;
+            left: -1px;
+            border-top: 2px solid;
+            border-left: 2px solid;
+        }
+        .bracket-box::after {
+            bottom: -1px;
+            right: -1px;
+            border-bottom: 2px solid;
+            border-right: 2px solid;
+        }
+
+        /* 3D Canvas Containers */
+        #hero-cad-canvas, #main-cad-canvas {
+            touch-action: none;
+            outline: none;
+        }
+
+        /* Fullscreen CAD Inspector state */
+        .cad-fullscreen {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 60 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            overflow-y: auto !important;
+            background: #070A0F !important;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0F17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1C2538;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #0EA5E9;
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-electric-500 selection:text-white overflow-x-hidden">
+
+    <!-- Hidden Global STEP File Input -->
+    <input type="file" id="global-step-input" accept=".stp,.step,.STP,.STEP" class="hidden">
+
+    <!-- Global Toast Notification Container (Replaces alert) -->
+    <div id="cad-toast-container" class="fixed top-20 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-11/12"></div>
+
+    <!-- Global Drag & Drop STEP File Overlay -->
+    <div id="global-drag-overlay" class="fixed inset-0 z-50 hidden items-center justify-center bg-carbon-950/85 backdrop-blur-md border-4 border-dashed border-electric-400 m-4 rounded-3xl pointer-events-none">
+        <div class="text-center p-8">
+            <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-electric-500/20 border border-electric-400 flex items-center justify-center text-electric-400">
+                <i class="fa-solid fa-cube text-3xl"></i>
+            </div>
+            <h2 class="font-display text-2xl font-bold text-white mb-2">Drop STEP CAD File (.stp / .step)</h2>
+            <p class="font-mono text-xs text-electric-300">OpenCascade WASM will tessellate & render the 3D geometry in the CAD Inspector</p>
+        </div>
+    </div>
+
+    <!-- Top Technical Status Bar / Navigation -->
+    <header class="sticky top-0 z-40 bg-carbon-900/90 backdrop-blur-md border-b border-slate-800/80">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand / CAD Identifier -->
+                <a href="#" class="flex items-center gap-3 group">
+                    <div class="w-9 h-9 rounded-lg bg-electric-500/10 border border-electric-500/40 flex items-center justify-center text-electric-400 group-hover:bg-electric-500 group-hover:text-carbon-950 transition-colors">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="9"/>
+                            <circle cx="12" cy="12" r="3"/>
+                            <line x1="12" y1="3" x2="12" y2="9"/>
+                            <line x1="12" y1="15" x2="12" y2="21"/>
+                            <line x1="3" y1="12" x2="9" y2="12"/>
+                            <line x1="15" y1="12" x2="21" y2="12"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="font-display font-bold text-white tracking-tight text-lg">EKANTO<span class="text-electric-400">.ENG</span></span>
+                        <span class="hidden sm:block font-mono text-[10px] text-slate-400 tracking-widest uppercase">AUTOMOTIVE R&D • CATIA V5 • STEP 3D</span>
+                    </div>
+                </a>
+
+                <!-- Desktop Navigation -->
+                <nav class="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-300">
+                    <a href="#about" class="hover:text-electric-400 transition-colors">About</a>
+                    <a href="#cad-viewer" class="hover:text-electric-400 transition-colors flex items-center gap-1.5 text-electric-400 font-semibold">
+                        <i class="fa-solid fa-cube text-xs"></i>
+                        <span>3D CAD Viewer</span>
+                    </a>
+                    <a href="#competencies" class="hover:text-electric-400 transition-colors">Competencies</a>
+                    <a href="#experience" class="hover:text-electric-400 transition-colors">Experience</a>
+                    <a href="#projects" class="hover:text-electric-400 transition-colors">Projects</a>
+                    <a href="#credentials" class="hover:text-electric-400 transition-colors">Credentials</a>
+                </nav>
+
+                <!-- Action CTA -->
+                <div class="flex items-center gap-2.5">
+                    <button onclick="triggerStepUpload()" class="hidden sm:flex px-3.5 py-2 rounded-lg bg-carbon-800 hover:bg-carbon-700 text-electric-400 border border-electric-500/40 font-mono font-semibold text-xs transition-all items-center gap-2">
+                        <i class="fa-solid fa-upload"></i>
+                        <span>Load .STEP</span>
+                    </button>
+                    <button onclick="openContactModal()" class="px-4 py-2 rounded-lg bg-electric-500 hover:bg-electric-400 text-carbon-950 font-semibold text-xs sm:text-sm transition-all shadow-lg shadow-electric-500/20 flex items-center gap-2">
+                        <i class="fa-solid fa-paper-plane text-xs"></i>
+                        <span>Contact</span>
+                    </button>
+                    <!-- Mobile Menu Toggle -->
+                    <button id="mobile-menu-btn" class="lg:hidden p-2 rounded-lg text-slate-300 hover:bg-carbon-800 border border-slate-700/60" aria-label="Toggle Menu">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Dropdown Nav -->
+        <div id="mobile-menu" class="hidden lg:hidden bg-carbon-850 border-b border-slate-800 px-4 pt-2 pb-4 space-y-2">
+            <a href="#about" class="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-carbon-800 hover:text-electric-400">About Me</a>
+            <a href="#cad-viewer" class="block px-3 py-2 rounded-lg text-sm text-electric-400 font-semibold hover:bg-carbon-800">3D CAD STEP Viewer (.stp/.step)</a>
+            <a href="#competencies" class="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-carbon-800 hover:text-electric-400">Core Competencies</a>
+            <a href="#experience" class="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-carbon-800 hover:text-electric-400">Experience Timeline</a>
+            <a href="#projects" class="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-carbon-800 hover:text-electric-400">Featured Wheel Projects</a>
+            <a href="#credentials" class="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-carbon-800 hover:text-electric-400">Credentials & BNSP</a>
+        </div>
+    </header>
+
+    <!-- 1. HERO SECTION -->
+    <section class="relative pt-10 pb-16 lg:pt-16 lg:pb-24 overflow-hidden">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+                
+                <!-- Left Column: Identity & Value Proposition -->
+                <div class="lg:col-span-7 space-y-6">
+                    <!-- Affiliation Pill -->
+                    <div class="inline-flex flex-wrap items-center gap-2 px-3.5 py-1.5 rounded-full bg-carbon-800 border border-electric-500/30 text-xs font-mono">
+                        <span class="w-2 h-2 rounded-full bg-electric-400"></span>
+                        <span class="text-electric-400 font-semibold">AUTOMOTIVE R&D</span>
+                        <span class="text-slate-500">|</span>
+                        <span class="text-slate-300">Engineering Design & Product Development</span>
+                    </div>
+
+                    <!-- Name & Role -->
+                    <div>
+                        <h1 class="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-tight">
+                            Ekanto Prasetyo Adi
+                            <span class="block text-xl sm:text-2xl lg:text-3xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-electric-400 via-sky-300 to-ambertech-400 mt-2">
+                                Product Design & Development Engineer
+                            </span>
+                        </h1>
+                        <p class="font-mono text-xs sm:text-sm text-slate-400 mt-2 uppercase tracking-wider">
+                            Specialization: CATIA V5 GSD • 3D Surface Modeling • 2D Technical Drawings • Machining Trials
+                        </p>
+                    </div>
+
+                    <!-- Taglines -->
+                    <div class="space-y-3">
+                        <p class="text-base sm:text-lg text-slate-300 leading-relaxed max-w-2xl border-l-2 border-electric-500 pl-4 py-1 bg-electric-500/5 rounded-r-lg">
+                            "Translating precision 3D surface modeling and 2D technical blueprints into production-ready automotive alloy wheels through disciplined machining trials and global compliance."
+                        </p>
+                        <p class="text-sm sm:text-base text-slate-400 leading-relaxed max-w-2xl border-l-2 border-ambertech-500/70 pl-4 py-0.5">
+                            "Bridging precision 3D surface aesthetics with structural FEA integrity and Design for Manufacturability (DFM)."
+                        </p>
+                    </div>
+
+                    <!-- Key Compliance Badges -->
+                    <div class="pt-1">
+                        <span class="block font-mono text-[11px] uppercase tracking-widest text-slate-400 mb-2.5">Homologation & Certified Standards</span>
+                        <div class="flex flex-wrap gap-2.5">
+                            <span class="px-3 py-1.5 rounded-md bg-carbon-800 border border-slate-700 font-mono text-xs font-semibold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-shield-halved text-electric-400"></i> SNI Standard
+                            </span>
+                            <span class="px-3 py-1.5 rounded-md bg-carbon-800 border border-slate-700 font-mono text-xs font-semibold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-circle-check text-electric-400"></i> JWL Compliant
+                            </span>
+                            <span class="px-3 py-1.5 rounded-md bg-carbon-800 border border-slate-700 font-mono text-xs font-semibold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-globe-europe text-electric-400"></i> EU Standards
+                            </span>
+                            <span class="px-3 py-1.5 rounded-md bg-ambertech-500/10 border border-ambertech-500/40 font-mono text-xs font-semibold text-ambertech-400 flex items-center gap-2">
+                                <i class="fa-solid fa-award"></i> BNSP Certified
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- CTA Buttons -->
+                    <div class="flex flex-wrap items-center gap-3.5 pt-2">
+                        <a href="#cad-viewer" class="px-5 py-3.5 rounded-xl bg-electric-500 hover:bg-electric-400 text-carbon-950 font-bold text-sm transition-all shadow-lg shadow-electric-500/25 flex items-center gap-2.5">
+                            <i class="fa-solid fa-cube"></i>
+                            <span>Open 3D CAD STEP Inspector</span>
+                        </a>
+                        <a href="#projects" class="px-5 py-3.5 rounded-xl bg-carbon-800 hover:bg-carbon-700 text-white border border-slate-700 hover:border-electric-500/50 font-semibold text-sm transition-all flex items-center gap-2.5">
+                            <span>Explore Wheel Projects</span>
+                            <i class="fa-solid fa-arrow-right text-electric-400"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Right Column: Interactive Live Three.js 3D CAD Viewport -->
+                <div class="lg:col-span-5">
+                    <div class="cad-card bracket-box rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+                        <!-- Top Viewport Metadata -->
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3 font-mono text-[11px]">
+                            <div class="flex items-center gap-2 text-electric-400">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                                <span id="hero-model-tag">CATIA_V5_GSD // LIVE_3D_WHEEL</span>
+                            </div>
+                            <span class="text-slate-400">TOL: ±0.05 mm</span>
+                        </div>
+
+                        <!-- Live Interactive Three.js 3D WebGL Viewport -->
+                        <div class="relative w-full h-[300px] sm:h-[330px] rounded-xl overflow-hidden bg-carbon-950 border border-slate-800/90">
+                            <div id="hero-cad-canvas" class="w-full h-full cursor-grab active:cursor-grabbing"></div>
+
+                            <!-- Subtle Corner Hints -->
+                            <div class="absolute top-2.5 left-2.5 pointer-events-none font-mono text-[10px] text-slate-300 bg-carbon-950/80 px-2.5 py-1 rounded-md border border-slate-800">
+                                <span class="text-electric-400">PCD:</span> 5x112 / 5x114.3 • <span class="text-ambertech-400">3D ORBIT</span>
+                            </div>
+
+                            <!-- Quick Finish Swatches inside Hero Viewport -->
+                            <div class="absolute top-2.5 right-2.5 flex items-center gap-1.5 bg-carbon-950/85 p-1.5 rounded-lg border border-slate-800">
+                                <button onclick="applyMetalPreset('machined')" title="Machined Silver" class="w-4 h-4 rounded-full border border-white/40 hover:scale-110 transition-transform" style="background: linear-gradient(135deg, #f8fafc, #94a3b8);"></button>
+                                <button onclick="applyMetalPreset('gunmetal')" title="Hyper Gunmetal" class="w-4 h-4 rounded-full border border-white/30 hover:scale-110 transition-transform" style="background: linear-gradient(135deg, #64748b, #1e293b);"></button>
+                                <button onclick="applyMetalPreset('satinbronze')" title="Satin Bronze" class="w-4 h-4 rounded-full border border-white/30 hover:scale-110 transition-transform" style="background: linear-gradient(135deg, #d97706, #451a03);"></button>
+                                <button onclick="applyMetalPreset('glossblack')" title="Gloss Black" class="w-4 h-4 rounded-full border border-white/30 hover:scale-110 transition-transform" style="background: linear-gradient(135deg, #334155, #000000);"></button>
+                            </div>
+
+                            <!-- Quick Upload STEP Button Overlay -->
+                            <div class="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between gap-2">
+                                <button onclick="triggerStepUpload()" class="flex-1 py-2 px-3 rounded-lg bg-electric-500/90 hover:bg-electric-400 text-carbon-950 font-mono text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-lg">
+                                    <i class="fa-solid fa-file-arrow-up"></i>
+                                    <span>Unggah File STEP (.stp/.step)</span>
+                                </button>
+                                <a href="#cad-viewer" class="py-2 px-3 rounded-lg bg-carbon-900/95 hover:bg-carbon-800 text-slate-200 border border-slate-700 font-mono text-[11px] font-semibold transition-all flex items-center gap-1.5" title="Buka Inspector CAD Lengkap">
+                                    <i class="fa-solid fa-expand text-electric-400"></i>
+                                    <span>Inspect</span>
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Bottom Telemetry Strip -->
+                        <div class="grid grid-cols-3 gap-2 pt-3 mt-3 border-t border-slate-800 font-mono text-xs">
+                            <div class="bg-carbon-900/80 p-2.5 rounded-lg border border-slate-800">
+                                <span class="block text-[10px] text-slate-400">WORKBENCH</span>
+                                <span class="text-white font-semibold">CATIA V5 GSD</span>
+                            </div>
+                            <div class="bg-carbon-900/80 p-2.5 rounded-lg border border-slate-800">
+                                <span class="block text-[10px] text-slate-400">3D ENGINE</span>
+                                <span class="text-electric-400 font-semibold">OCCT WASM</span>
+                            </div>
+                            <div class="bg-carbon-900/80 p-2.5 rounded-lg border border-slate-800">
+                                <span class="block text-[10px] text-slate-400">PROCESS</span>
+                                <span class="text-ambertech-400 font-semibold">MACHINING TRIAL</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- 1.2 DEDICATED INTERACTIVE 3D CAD STEP & BLUEPRINT INSPECTOR SECTION -->
+    <section id="cad-viewer" class="py-16 sm:py-24 border-t border-slate-800/70 bg-carbon-950/60 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <!-- Section Header + Large Upload Button -->
+            <div class="flex flex-col lg:flex-row lg:items-end justify-between mb-8 gap-6">
+                <div>
+                    <div class="flex items-center gap-2.5">
+                        <span class="font-mono text-xs text-electric-400 uppercase tracking-widest">// INTERACTIVE 3D CAD WORKSPACE</span>
+                        <span id="occt-status-badge" class="px-2.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-ambertech-500/20 text-ambertech-400 border border-ambertech-500/30">
+                            Initializing OpenCascade WASM...
+                        </span>
+                    </div>
+                    <h2 class="font-display text-3xl sm:text-4xl font-bold text-white mt-1">
+                        3D CAD STEP (.stp / .step) & Wheel Inspector
+                    </h2>
+                    <p class="text-sm text-slate-400 max-w-2xl mt-2">
+                        Inspect 3D automotive wheel assemblies or load your own <code class="text-electric-400 font-mono">.stp</code> / <code class="text-electric-400 font-mono">.step</code> CAD files directly in the browser via client-side OpenCascade WebAssembly—zero server upload required.
+                    </p>
+                </div>
+
+                <!-- Prominent STEP Upload CTA -->
+                <div class="flex flex-wrap items-center gap-3">
+                    <button onclick="triggerStepUpload()" class="px-5 py-3.5 rounded-xl bg-gradient-to-r from-electric-500 to-sky-400 hover:from-electric-400 hover:to-sky-300 text-carbon-950 font-bold text-sm shadow-xl shadow-electric-500/25 transition-all flex items-center gap-3 active:scale-[0.98]">
+                        <div class="w-8 h-8 rounded-lg bg-carbon-950/15 flex items-center justify-center">
+                            <i class="fa-solid fa-cloud-arrow-up text-base"></i>
+                        </div>
+                        <div class="text-left">
+                            <div class="leading-tight font-extrabold">Unggah File STEP (.stp / .step)</div>
+                            <div class="text-[11px] font-mono opacity-85">Click or Drag & Drop CAD B-Rep File</div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Main Interactive CAD Inspector Workstation Container -->
+            <div id="cad-workstation-wrapper" class="cad-card bracket-box rounded-2xl overflow-hidden border border-electric-500/25">
+                
+                <!-- Top Workstation Toolbar -->
+                <div class="bg-carbon-950/95 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                    <!-- Built-in 3D Demo Model Selector -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-mono text-[11px] text-slate-400 uppercase mr-1">Active Model:</span>
+                        <button onclick="loadBuiltinDemo('twin5')" id="btn-demo-twin5" class="demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-electric-500 text-carbon-950 transition-all">
+                            Demo: Twin-5-Spoke Performance
+                        </button>
+                        <button onclick="loadBuiltinDemo('rally6')" id="btn-demo-rally6" class="demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-carbon-800 text-slate-300 hover:text-white border border-slate-700 transition-all">
+                            Demo: Rally 6-Spoke Heavy-Duty
+                        </button>
+                        <span id="uploaded-step-pill" class="hidden px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-ambertech-500/20 text-ambertech-400 border border-ambertech-500/40 items-center gap-2">
+                            <i class="fa-solid fa-file-code"></i>
+                            <span id="uploaded-step-filename">custom.stp</span>
+                        </span>
+                    </div>
+
+                    <!-- Camera Views & Fullscreen Controls -->
+                    <div class="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+                        <button onclick="setCadCameraView('iso')" class="px-2.5 py-1.5 rounded-lg bg-carbon-800 hover:bg-electric-500/20 text-slate-200 border border-slate-700 transition-colors">Isometric</button>
+                        <button onclick="setCadCameraView('front')" class="px-2.5 py-1.5 rounded-lg bg-carbon-800 hover:bg-electric-500/20 text-slate-200 border border-slate-700 transition-colors">Front</button>
+                        <button onclick="setCadCameraView('side')" class="px-2.5 py-1.5 rounded-lg bg-carbon-800 hover:bg-electric-500/20 text-slate-200 border border-slate-700 transition-colors">Side</button>
+                        <button onclick="setCadCameraView('top')" class="px-2.5 py-1.5 rounded-lg bg-carbon-800 hover:bg-electric-500/20 text-slate-200 border border-slate-700 transition-colors">Top</button>
+                        <button onclick="setCadCameraView('iso')" class="px-2.5 py-1.5 rounded-lg bg-electric-500/15 hover:bg-electric-500/30 text-electric-400 border border-electric-500/40 transition-colors" title="Reset & Fit View">
+                            <i class="fa-solid fa-crosshairs"></i> Reset
+                        </button>
+                        <button onclick="toggleCadFullscreen()" id="btn-cad-fullscreen" class="px-2.5 py-1.5 rounded-lg bg-carbon-800 hover:bg-slate-700 text-ambertech-400 border border-slate-700 transition-colors" title="Toggle Fullscreen Inspector">
+                            <i class="fa-solid fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Grid: Left 3D Canvas (8 cols) + Right Material & Inspection Controls (4 cols) -->
+                <div class="grid grid-cols-1 lg:grid-cols-12">
+                    
+                    <!-- 3D WebGL Canvas Area -->
+                    <div class="lg:col-span-8 relative bg-carbon-950 min-h-[420px] sm:min-h-[520px] flex flex-col">
+                        <div id="main-cad-canvas" class="w-full flex-1 min-h-[420px] sm:min-h-[520px] cursor-grab active:cursor-grabbing"></div>
+
+                        <!-- Processing Overlay during OpenCascade WASM tessellation -->
+                        <div id="cad-loading-overlay" class="hidden absolute inset-0 z-30 bg-carbon-950/85 backdrop-blur-sm items-center justify-center p-6">
+                            <div class="bg-carbon-900 border border-electric-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+                                <div class="w-14 h-14 mx-auto mb-4 rounded-full border-4 border-slate-700 border-t-electric-400 animate-spin"></div>
+                                <h4 id="cad-loading-title" class="font-display font-bold text-white text-base mb-1">Tessellating STEP Geometry...</h4>
+                                <p class="font-mono text-xs text-slate-400">OpenCascade WASM B-Rep surface meshing in progress</p>
+                            </div>
+                        </div>
+
+                        <!-- Bottom Navigation Gesture Guide Overlay -->
+                        <div class="absolute bottom-3 left-3 right-3 pointer-events-none flex flex-wrap items-center justify-between gap-2">
+                            <div class="bg-carbon-900/90 backdrop-blur-md border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-[11px] text-slate-300 flex flex-wrap items-center gap-3">
+                                <span><strong class="text-electric-400">Left Drag / 1-Finger:</strong> Orbit</span>
+                                <span><strong class="text-electric-400">Scroll / Pinch:</strong> Zoom</span>
+                                <span><strong class="text-electric-400">Right Drag / 2-Finger:</strong> Pan</span>
+                            </div>
+                            <div class="bg-carbon-900/90 backdrop-blur-md border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-[11px] text-ambertech-400">
+                                <span id="hud-finish-label">Finish: Machined Silver</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Inspection Sidebar -->
+                    <div class="lg:col-span-4 bg-carbon-900/95 border-t lg:border-t-0 lg:border-l border-slate-800 p-5 flex flex-col justify-between space-y-5">
+                        
+                        <!-- 1. Metallic Finish Presets -->
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <span class="font-mono text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                                    <i class="fa-solid fa-palette text-electric-400"></i>
+                                    Alloy Metallic Finish
+                                </span>
+                                <span id="active-preset-badge" class="font-mono text-[11px] text-electric-400 bg-electric-500/10 px-2 py-0.5 rounded">Machined Silver</span>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="applyMetalPreset('machined')" data-metal="machined" class="metal-preset-btn p-2.5 rounded-xl bg-carbon-800 border border-electric-500 text-left flex items-center gap-2.5 transition-all">
+                                    <span class="w-5 h-5 rounded-full shrink-0 border border-white/30" style="background: linear-gradient(135deg, #f8fafc, #94a3b8);"></span>
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-semibold text-white truncate">Machined Silver</div>
+                                        <div class="font-mono text-[10px] text-slate-400">CNC Clearcoat</div>
+                                    </div>
+                                </button>
+
+                                <button onclick="applyMetalPreset('gunmetal')" data-metal="gunmetal" class="metal-preset-btn p-2.5 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700/80 text-left flex items-center gap-2.5 transition-all">
+                                    <span class="w-5 h-5 rounded-full shrink-0 border border-white/25" style="background: linear-gradient(135deg, #64748b, #1e293b);"></span>
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-semibold text-white truncate">Hyper Gunmetal</div>
+                                        <div class="font-mono text-[10px] text-slate-400">Metallic Gray</div>
+                                    </div>
+                                </button>
+
+                                <button onclick="applyMetalPreset('glossblack')" data-metal="glossblack" class="metal-preset-btn p-2.5 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700/80 text-left flex items-center gap-2.5 transition-all">
+                                    <span class="w-5 h-5 rounded-full shrink-0 border border-white/25" style="background: linear-gradient(135deg, #334155, #000000);"></span>
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-semibold text-white truncate">Gloss Black</div>
+                                        <div class="font-mono text-[10px] text-slate-400">Piano Coat</div>
+                                    </div>
+                                </button>
+
+                                <button onclick="applyMetalPreset('satinbronze')" data-metal="satinbronze" class="metal-preset-btn p-2.5 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700/80 text-left flex items-center gap-2.5 transition-all">
+                                    <span class="w-5 h-5 rounded-full shrink-0 border border-white/25" style="background: linear-gradient(135deg, #d97706, #451a03);"></span>
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-semibold text-white truncate">Satin Bronze</div>
+                                        <div class="font-mono text-[10px] text-slate-400">Forged Motorsport</div>
+                                    </div>
+                                </button>
+
+                                <button onclick="applyMetalPreset('champagnegold')" data-metal="champagnegold" class="metal-preset-btn p-2.5 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700/80 text-left flex items-center gap-2.5 transition-all">
+                                    <span class="w-5 h-5 rounded-full shrink-0 border border-white/25" style="background: linear-gradient(135deg, #fef08a, #713f12);"></span>
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-semibold text-white truncate">Motorsport Gold</div>
+                                        <div class="font-mono text-[10px] text-slate-400">Rally Anodized</div>
+                                    </div>
+                                </button>
+
+                                <button onclick="applyMetalPreset('rawtitanium')" data-metal="rawtitanium" class="metal-preset-btn p-2.5 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700/80 text-left flex items-center gap-2.5 transition-all">
+                                    <span class="w-5 h-5 rounded-full shrink-0 border border-white/25" style="background: linear-gradient(135deg, #e2e8f0, #475569);"></span>
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-semibold text-white truncate">Brushed Titanium</div>
+                                        <div class="font-mono text-[10px] text-slate-400">Raw Billet</div>
+                                    </div>
+                                </button>
+                            </div>
+
+                            <!-- PBR Metalness & Roughness Sliders -->
+                            <div class="pt-2 space-y-2.5 border-t border-slate-800">
+                                <div>
+                                    <div class="flex justify-between font-mono text-[11px] text-slate-400 mb-1">
+                                        <span>Metalness</span>
+                                        <span id="cad-metalness-val" class="text-white">0.92</span>
+                                    </div>
+                                    <input type="range" id="cad-metalness-slider" min="0" max="1" step="0.02" value="0.92" class="w-full accent-electric-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer">
+                                </div>
+                                <div>
+                                    <div class="flex justify-between font-mono text-[11px] text-slate-400 mb-1">
+                                        <span>Surface Roughness</span>
+                                        <span id="cad-roughness-val" class="text-white">0.20</span>
+                                    </div>
+                                    <input type="range" id="cad-roughness-slider" min="0.04" max="0.95" step="0.02" value="0.20" class="w-full accent-electric-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. CAD Display & Inspection Toggles -->
+                        <div class="space-y-2.5 pt-3 border-t border-slate-800">
+                            <span class="block font-mono text-xs font-bold uppercase tracking-wider text-slate-300">
+                                <i class="fa-solid fa-eye text-ambertech-400 mr-1.5"></i>
+                                Display & CAD Diagnostics
+                            </span>
+                            <div class="grid grid-cols-3 gap-2 font-mono text-[11px]">
+                                <button onclick="toggleCadWireframe()" id="btn-toggle-wireframe" class="py-2 px-2 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700 text-slate-300 font-semibold transition-all flex flex-col items-center gap-1">
+                                    <i class="fa-solid fa-border-all text-electric-400"></i>
+                                    <span>Wireframe</span>
+                                </button>
+                                <button onclick="toggleCadEdges()" id="btn-toggle-edges" class="py-2 px-2 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700 text-slate-300 font-semibold transition-all flex flex-col items-center gap-1">
+                                    <i class="fa-solid fa-vector-square text-ambertech-400"></i>
+                                    <span>CAD Edges</span>
+                                </button>
+                                <button onclick="toggleCadAutoRotate()" id="btn-toggle-rotate" class="py-2 px-2 rounded-xl bg-electric-500/20 border border-electric-500/50 text-electric-300 font-semibold transition-all flex flex-col items-center gap-1">
+                                    <i class="fa-solid fa-rotate text-electric-400"></i>
+                                    <span>Rotate: ON</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 3. Real-time CAD Geometry Telemetry -->
+                        <div class="pt-3 border-t border-slate-800">
+                            <span class="block font-mono text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                                <i class="fa-solid fa-microchip text-electric-400 mr-1.5"></i>
+                                Geometry Telemetry
+                            </span>
+                            <div class="bg-carbon-950 rounded-xl p-3 border border-slate-800 space-y-1.5 font-mono text-[11px]">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-400">Source Model:</span>
+                                    <span id="cad-stat-source" class="text-white truncate max-w-[155px]">Twin-5-Spoke Demo</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-400">Solid / Mesh Parts:</span>
+                                    <span id="cad-stat-parts" class="text-electric-400">12 parts</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-400">Mesh Triangles:</span>
+                                    <span id="cad-stat-tris" class="text-emerald-400">0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-400">Bounding Box:</span>
+                                    <span id="cad-stat-bbox" class="text-ambertech-400">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 1.5 ABOUT ME SECTION -->
+    <section id="about" class="py-16 sm:py-24 border-t border-slate-800/70 relative overflow-hidden">
+        <!-- Subtle industrial amber accent bar -->
+        <div class="hidden lg:block absolute inset-x-0 top-1/2 -translate-y-1/2 h-36 bg-gradient-to-r from-ambertech-500/10 via-ambertech-500/5 to-transparent border-y border-ambertech-500/15 pointer-events-none"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="cad-card bracket-box rounded-2xl p-6 sm:p-10 lg:p-12">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+
+                    <!-- Left Column: Grayscale Studio Portrait Frame with CAD Reticles & Permanent Photo -->
+                    <div class="lg:col-span-4 flex flex-col items-center">
+                        <div class="relative w-full max-w-[280px] aspect-[3/4] rounded-xl overflow-hidden bg-carbon-950 border border-slate-700/80 shadow-2xl group">
+                            <!-- CAD Corner Reticles -->
+                            <span class="absolute top-2.5 left-2.5 w-4 h-4 border-t-2 border-l-2 border-ambertech-400 z-20 pointer-events-none"></span>
+                            <span class="absolute top-2.5 right-2.5 w-4 h-4 border-t-2 border-r-2 border-electric-400 z-20 pointer-events-none"></span>
+                            <span class="absolute bottom-2.5 left-2.5 w-4 h-4 border-b-2 border-l-2 border-electric-400 z-20 pointer-events-none"></span>
+                            <span class="absolute bottom-2.5 right-2.5 w-4 h-4 border-b-2 border-r-2 border-ambertech-400 z-20 pointer-events-none"></span>
+
+                            <!-- Top Telemetry Tag -->
+                            <div class="absolute top-3 inset-x-4 flex items-center justify-between font-mono text-[10px] text-slate-300 z-20 pointer-events-none">
+                                <span class="px-2 py-0.5 rounded bg-carbon-950/80 border border-slate-700/80">ID // EPA-01</span>
+                                <span class="px-2 py-0.5 rounded bg-ambertech-500/20 border border-ambertech-500/40 text-ambertech-400">PROFILE</span>
+                            </div>
+
+                            <!-- Permanently Embedded Studio Portrait Image -->
+                            <img id="about-portrait-img" src="data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 800'%3E%3Cdefs%3E%3CradialGradient id='bg' cx='50%25' cy='38%25' r='65%25'%3E%3Cstop offset='0%25' stop-color='%23c4c4c4'/%3E%3Cstop offset='55%25' stop-color='%239a9a9a'/%3E%3Cstop offset='100%25' stop-color='%236e6e6e'/%3E%3C/radialGradient%3E%3ClinearGradient id='skin' x1='0%25' y1='0%25' x2='100%25' y2='0%25'%3E%3Cstop offset='0%25' stop-color='%23b5b5b5'/%3E%3Cstop offset='25%25' stop-color='%23dcdcdc'/%3E%3Cstop offset='50%25' stop-color='%23e8e8e8'/%3E%3Cstop offset='75%25' stop-color='%23d4d4d4'/%3E%3Cstop offset='100%25' stop-color='%23adadad'/%3E%3C/linearGradient%3E%3ClinearGradient id='suit' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23232323'/%3E%3Cstop offset='50%25' stop-color='%23161616'/%3E%3Cstop offset='100%25' stop-color='%230d0d0d'/%3E%3C/linearGradient%3E%3ClinearGradient id='tie' x1='0%25' y1='0%25' x2='100%25' y2='0%25'%3E%3Cstop offset='0%25' stop-color='%23181818'/%3E%3Cstop offset='50%25' stop-color='%232c2c2c'/%3E%3Cstop offset='100%25' stop-color='%23121212'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='600' height='800' fill='url(%23bg)'/%3E%3C!-- Neck & Collar Shadow --%3E%3Cpath d='M238 450 L362 450 L375 565 L225 565 Z' fill='%23b8b8b8'/%3E%3Cpath d='M238 450 Q300 505 362 450 L365 495 Q300 538 235 495 Z' fill='%238c8c8c' opacity='0.6'/%3E%3C!-- Formal Black Suit Jacket --%3E%3Cpath d='M35 800 C42 630 110 568 214 542 L300 725 L386 542 C490 568 558 630 565 800 Z' fill='url(%23suit)'/%3E%3C!-- Suit Lapels --%3E%3Cpolygon points='214,542 262,528 300,745 224,660 246,635 205,615' fill='%231c1c1c' stroke='%23333333' stroke-width='2'/%3E%3Cpolygon points='386,542 338,528 300,745 376,660 354,635 395,615' fill='%231c1c1c' stroke='%23333333' stroke-width='2'/%3E%3C!-- Pocket & Trim --%3E%3Cline x1='418' y1='732' x2='512' y2='744' stroke='%23303030' stroke-width='4'/%3E%3C!-- White Dress Shirt --%3E%3Cpolygon points='242,532 358,532 300,750' fill='%23f5f5f5'/%3E%3Cpolygon points='238,525 282,582 300,556 262,518' fill='%23ffffff' stroke='%23cccccc' stroke-width='1.5'/%3E%3Cpolygon points='362,525 318,582 300,556 338,518' fill='%23ffffff' stroke='%23cccccc' stroke-width='1.5'/%3E%3C!-- Formal Textured Tie --%3E%3Cpolygon points='282,556 318,556 313,592 287,592' fill='url(%23tie)' stroke='%230a0a0a' stroke-width='1.5'/%3E%3Cpolygon points='287,592 313,592 328,748 300,785 272,748' fill='url(%23tie)' stroke='%230a0a0a' stroke-width='1.5'/%3E%3C!-- Ears --%3E%3Cellipse cx='178' cy='335' rx='16' ry='36' fill='%23b5b5b5' stroke='%23999999' stroke-width='1.5'/%3E%3Cellipse cx='422' cy='335' rx='16' ry='36' fill='%23b5b5b5' stroke='%23999999' stroke-width='1.5'/%3E%3C!-- Face Contour --%3E%3Cpath d='M184 285 C184 175 416 175 416 285 C416 392 376 472 300 476 C224 472 184 392 184 285 Z' fill='url(%23skin)'/%3E%3C!-- Subtle Cheek & Jaw Shading --%3E%3Cpath d='M196 365 Q235 452 300 462 Q365 452 404 365 Q372 470 300 475 Q228 470 196 365 Z' fill='%239e9e9e' opacity='0.45'/%3E%3C!-- Textured Dark Wavy Hair --%3E%3Cpath d='M176 305 C166 195 208 118 302 118 C394 118 434 195 424 305 C416 258 400 232 384 238 C372 212 342 204 316 218 C294 202 262 204 238 222 C214 218 190 245 176 305 Z' fill='%23141414'/%3E%3Cpath d='M202 212 Q232 252 258 216 Q284 256 312 214 Q342 254 374 218 Q396 244 410 220' fill='none' stroke='%23292929' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M224 166 Q268 194 304 162 Q342 192 382 166' fill='none' stroke='%23242424' stroke-width='5' stroke-linecap='round'/%3E%3C!-- Eyebrows --%3E%3Cpath d='M202 268 Q236 254 274 268' fill='none' stroke='%231f1f1f' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M326 268 Q364 254 398 268' fill='none' stroke='%231f1f1f' stroke-width='8' stroke-linecap='round'/%3E%3C!-- Bold Black-Rimmed Eyeglasses --%3E%3Cg fill='rgba(255,255,255,0.08)' stroke='%23111111' stroke-width='11' stroke-linejoin='round'%3E%3Crect x='194' y='274' width='88' height='62' rx='16'/%3E%3Crect x='318' y='274' width='88' height='62' rx='16'/%3E%3Cline x1='282' y1='292' x2='318' y2='292' stroke-width='10'/%3E%3Cline x1='180' y1='290' x2='194' y2='290' stroke-width='8'/%3E%3Cline x1='406' y1='290' x2='420' y2='290' stroke-width='8'/%3E%3C/g%3E%3C!-- Eyes --%3E%3Cellipse cx='238' cy='305' rx='15' ry='9' fill='%23f2f2f2'/%3E%3Ccircle cx='238' cy='305' r='7.5' fill='%23141414'/%3E%3Ccircle cx='235' cy='302' r='2.2' fill='%23ffffff'/%3E%3Cellipse cx='362' cy='305' rx='15' ry='9' fill='%23f2f2f2'/%3E%3Ccircle cx='362' cy='305' r='7.5' fill='%23141414'/%3E%3Ccircle cx='359' cy='302' r='2.2' fill='%23ffffff'/%3E%3C!-- Nose --%3E%3Cpath d='M300 296 L292 356 Q300 364 308 356' fill='none' stroke='%238c8c8c' stroke-width='3.5' stroke-linecap='round'/%3E%3Cpath d='M280 356 Q288 364 294 359 M306 359 Q312 364 320 356' fill='none' stroke='%23787878' stroke-width='3' stroke-linecap='round'/%3E%3C!-- Lips --%3E%3Cpath d='M268 398 Q286 390 300 395 Q314 390 332 398 Q300 404 268 398 Z' fill='%239c9c9c'/%3E%3Cpath d='M270 399 Q300 416 330 399 Q315 419 300 419 Q285 419 270 399 Z' fill='%23b0b0b0'/%3E%3Cline x1='268' y1='398' x2='332' y2='398' stroke='%23595959' stroke-width='2.5'/%3E%3C/svg%3E" alt="Ekanto Prasetyo Adi — Formal Studio Portrait" class="w-full h-full object-cover object-top grayscale contrast-110 transition-transform duration-500 group-hover:scale-[1.02]">
+
+                            <!-- Optional Photo Update Button (Visible on Hover) -->
+                            <label for="portrait-file-input" class="opacity-0 group-hover:opacity-100 focus-within:opacity-100 absolute inset-x-3 bottom-3 z-20 cursor-pointer px-3 py-2 rounded-lg bg-carbon-950/90 hover:bg-electric-500 text-slate-200 hover:text-carbon-950 border border-slate-700 hover:border-electric-400 font-mono text-[11px] font-semibold flex items-center justify-center gap-2 transition-all shadow-lg backdrop-blur-md">
+                                <i class="fa-solid fa-camera"></i>
+                                <span>Change Studio Photo</span>
+                            </label>
+                            <input id="portrait-file-input" type="file" accept="image/*" class="hidden" onchange="handlePortraitUpload(event)">
+                        </div>
+                        <span class="font-mono text-[11px] text-slate-400 mt-3 text-center">
+                            E. PRASETYO ADI • MONOCHROME STUDIO SPEC
+                        </span>
+                    </div>
+
+                    <!-- Right Column: About Me Narrative & Strength Matrix -->
+                    <div class="lg:col-span-8 space-y-6">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <span class="font-mono text-xs text-electric-400 uppercase tracking-widest">// 00. ENGINEER PROFILE</span>
+                                <h2 class="font-display text-3xl sm:text-4xl font-bold text-white mt-1 flex items-center gap-3">
+                                    <span>About Me</span>
+                                    <span class="px-2.5 py-0.5 rounded bg-ambertech-500 text-carbon-950 font-mono text-xs font-extrabold tracking-wider uppercase">
+                                        VERIFIED
+                                    </span>
+                                </h2>
+                            </div>
+                            <span class="font-mono text-xs text-slate-400 hidden sm:inline-block">REV_2026 // PERSONAL_BRIEF</span>
+                        </div>
+
+                        <div class="relative p-6 rounded-xl bg-carbon-900/90 border-l-4 border-ambertech-400 border-y border-r border-slate-800 shadow-inner">
+                            <p class="text-base sm:text-lg text-slate-200 leading-relaxed font-normal">
+                                "I am a dedicated and qualified professional with demonstrated strengths in performance services, time management, and creativity. Good at solving problems and building successful solutions. Excellent verbal and written communicator with a strong background building positive relationships and exceeding goals."
+                            </p>
+                        </div>
+
+                        <div>
+                            <span class="block font-mono text-[11px] uppercase tracking-widest text-slate-400 mb-3">
+                                Key Professional Attributes
+                            </span>
+                            <div class="flex flex-wrap gap-2.5">
+                                <span class="px-3.5 py-2 rounded-lg bg-carbon-900 border border-ambertech-500/30 font-mono text-xs text-ambertech-400 flex items-center gap-2">
+                                    <i class="fa-solid fa-gauge-high"></i> Performance Services
+                                </span>
+                                <span class="px-3.5 py-2 rounded-lg bg-carbon-900 border border-electric-500/30 font-mono text-xs text-electric-400 flex items-center gap-2">
+                                    <i class="fa-solid fa-clock"></i> Time Management
+                                </span>
+                                <span class="px-3.5 py-2 rounded-lg bg-carbon-900 border border-electric-500/30 font-mono text-xs text-electric-400 flex items-center gap-2">
+                                    <i class="fa-solid fa-lightbulb"></i> Creative Problem Solving
+                                </span>
+                                <span class="px-3.5 py-2 rounded-lg bg-carbon-900 border border-slate-700 font-mono text-xs text-slate-200 flex items-center gap-2">
+                                    <i class="fa-solid fa-comments text-electric-400"></i> Verbal & Written Communication
+                                </span>
+                                <span class="px-3.5 py-2 rounded-lg bg-carbon-900 border border-slate-700 font-mono text-xs text-slate-200 flex items-center gap-2">
+                                    <i class="fa-solid fa-handshake text-ambertech-400"></i> Client & Team Collaboration
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80 font-mono">
+                            <div class="bg-carbon-950/70 p-3 rounded-xl border border-slate-800">
+                                <span class="block text-[10px] text-slate-400">FOCUS</span>
+                                <span class="text-xs sm:text-sm font-bold text-white">Solution-Oriented R&D</span>
+                            </div>
+                            <div class="bg-carbon-950/70 p-3 rounded-xl border border-slate-800">
+                                <span class="block text-[10px] text-slate-400">MINDSET</span>
+                                <span class="text-xs sm:text-sm font-bold text-ambertech-400">Goal-Exceeding Delivery</span>
+                            </div>
+                            <div class="col-span-2 sm:col-span-1 bg-carbon-950/70 p-3 rounded-xl border border-slate-800">
+                                <span class="block text-[10px] text-slate-400">COLLABORATION</span>
+                                <span class="text-xs sm:text-sm font-bold text-electric-400">Cross-Functional Lead</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. CORE COMPETENCIES & TECH STACK -->
+    <section id="competencies" class="py-16 sm:py-24 border-t border-slate-800/70 bg-carbon-950/40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
+                <div>
+                    <span class="font-mono text-xs text-electric-400 uppercase tracking-widest">// 01. ENGINEERING CAPABILITIES</span>
+                    <h2 class="font-display text-3xl sm:text-4xl font-bold text-white mt-1">Core Competencies & Tech Stack</h2>
+                </div>
+                <p class="text-sm text-slate-400 max-w-md">
+                    End-to-end wheel development lifecycle from Class-A generative surfacing and 2D blueprints to CNC machining trials, calibration, and global compliance.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                
+                <!-- Pillar 1: CATIA V5 Surface Modeling & 2D Drawings -->
+                <div class="cad-card rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="w-12 h-12 rounded-xl bg-electric-500/10 border border-electric-500/30 flex items-center justify-center text-electric-400 mb-5">
+                            <i class="fa-solid fa-cubes text-xl"></i>
+                        </div>
+                        <span class="font-mono text-[11px] text-electric-400 uppercase tracking-wider">Domain 01</span>
+                        <h3 class="font-display text-xl font-bold text-white mt-1 mb-3">CATIA V5 Surface Modeling & 2D Drawings</h3>
+                        <p class="text-sm text-slate-400 leading-relaxed mb-5">
+                            Translating styling concepts into Class-A watertight 3D surface geometry and detailed 2D engineering blueprints.
+                        </p>
+                    </div>
+                    <ul class="space-y-2.5 border-t border-slate-800 pt-4 font-mono text-xs text-slate-300">
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-electric-400 mt-0.5"></i>
+                            <span>Generative Shape Design (GSD) & Class-A Surfacing</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-electric-400 mt-0.5"></i>
+                            <span>2D Technical Blueprints & GD&T Tolerancing</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-electric-400 mt-0.5"></i>
+                            <span>Multi-PCD, Center Bore & Offset (ET) Specifications</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Pillar 2: Machining Trials & Manufacturing Coordination -->
+                <div class="cad-card rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="w-12 h-12 rounded-xl bg-ambertech-500/10 border border-ambertech-500/30 flex items-center justify-center text-ambertech-400 mb-5">
+                            <i class="fa-solid fa-gears text-xl"></i>
+                        </div>
+                        <span class="font-mono text-[11px] text-ambertech-400 uppercase tracking-wider">Domain 02</span>
+                        <h3 class="font-display text-xl font-bold text-white mt-1 mb-3">Machining Trials & Manufacturing Coordination</h3>
+                        <p class="text-sm text-slate-400 leading-relaxed mb-5">
+                            Bridging client specifications with internal machining teams from initial prototype samples to trial production runs.
+                        </p>
+                    </div>
+                    <ul class="space-y-2.5 border-t border-slate-800 pt-4 font-mono text-xs text-slate-300">
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-ambertech-400 mt-0.5"></i>
+                            <span>CNC Machining Trials & Production Tooling Readiness</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-ambertech-400 mt-0.5"></i>
+                            <span>Tight-Tolerance Center Cap Interface Machining</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-ambertech-400 mt-0.5"></i>
+                            <span>Prototype Sample Fabrication & Trial Validation</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Pillar 3: Global Compliance & Calibration -->
+                <div class="cad-card rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="w-12 h-12 rounded-xl bg-electric-500/10 border border-electric-500/30 flex items-center justify-center text-electric-400 mb-5">
+                            <i class="fa-solid fa-shield-halved text-xl"></i>
+                        </div>
+                        <span class="font-mono text-[11px] text-electric-400 uppercase tracking-wider">Domain 03</span>
+                        <h3 class="font-display text-xl font-bold text-white mt-1 mb-3">Global Compliance & Calibration</h3>
+                        <p class="text-sm text-slate-400 leading-relaxed mb-5">
+                            Ensuring international regulatory homologation and high-precision press jig metrology across manufacturing workflows.
+                        </p>
+                    </div>
+                    <ul class="space-y-2.5 border-t border-slate-800 pt-4 font-mono text-xs text-slate-300">
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-electric-400 mt-0.5"></i>
+                            <span>SNI, JWL & EU Aftermarket Wheel Standards</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-electric-400 mt-0.5"></i>
+                            <span>Prescale Film Pressure Calibration & Jig Testing</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-electric-400 mt-0.5"></i>
+                            <span>Deviation Root-Cause Investigation & Corrective Action</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Pillar 4: EFI Automotive Diagnostics & Maintenance -->
+                <div class="cad-card rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-5">
+                            <i class="fa-solid fa-wrench text-xl"></i>
+                        </div>
+                        <span class="font-mono text-[11px] text-emerald-400 uppercase tracking-wider">Domain 04</span>
+                        <h3 class="font-display text-xl font-bold text-white mt-1 mb-3">EFI Automotive Diagnostics & Maintenance</h3>
+                        <p class="text-sm text-slate-400 leading-relaxed mb-5">
+                            Practical vehicle system diagnostics and mechanical assembly grounding digital CAD designs in real-world serviceability.
+                        </p>
+                    </div>
+                    <ul class="space-y-2.5 border-t border-slate-800 pt-4 font-mono text-xs text-slate-300">
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-emerald-400 mt-0.5"></i>
+                            <span>BNSP Certified Mechanic</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-angle-right text-emerald-400 mt-0.5"></i>
+                            <span>Pemeliharaan Mesin Kendaraan Ringan Sistem Injeksi</span>
+                        </li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- 2.5 EXPERIENCE & CAREER TIMELINE SECTION (CLEANLY ORDERED 4 ROLES) -->
+    <section id="experience" class="py-16 sm:py-24 border-t border-slate-800/70">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
+                <div>
+                    <span class="font-mono text-xs text-electric-400 uppercase tracking-widest">// 02. CAREER TIMELINE</span>
+                    <h2 class="font-display text-3xl sm:text-4xl font-bold text-white mt-1">Engineering & Technical Experience</h2>
+                </div>
+                <p class="text-sm text-slate-400 max-w-md">
+                    Progressive track record across 3D CAD wheel R&D, precision calibration & prescale metrology, automotive injection diagnostics, and 2W new product development.
+                </p>
+            </div>
+
+            <!-- Vertical CAD Timeline Container -->
+            <div class="relative space-y-8 before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-electric-500 before:via-slate-700 before:to-slate-800">
+
+                <!-- Role 1: Engineering Design Development — Foreman -->
+                <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-xl border border-electric-400 bg-carbon-900 text-electric-400 shadow-[0_0_15px_rgba(14,165,233,0.35)] shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 font-mono text-xs font-bold">
+                        01
+                    </div>
+                    <div class="w-[calc(100%-3.5rem)] md:w-[calc(50%-2.5rem)] cad-card bracket-box rounded-2xl p-6">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <span class="px-2.5 py-1 rounded bg-electric-500/15 border border-electric-500/30 font-mono text-[11px] font-semibold text-electric-400">
+                                APRIL 2025 – SEPTEMBER 2026
+                            </span>
+                            <span class="font-mono text-xs text-ambertech-400 font-semibold uppercase">Foreman</span>
+                        </div>
+                        <h3 class="font-display text-xl font-bold text-white">Engineering Design Development</h3>
+                        <p class="font-mono text-xs text-slate-400 mt-0.5 mb-4">Automotive Wheel R&D / Aftermarket Division</p>
+                        <ul class="space-y-2 text-xs sm:text-sm text-slate-300">
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-electric-400 mt-1"></i>
+                                <span>Designed aftermarket wheels (3D surface modeling & 2D technical drawings) using <strong>CATIA</strong>.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-electric-400 mt-1"></i>
+                                <span>Led the technical execution of key client projects (e.g., <strong>Damina Performance</strong>) from initial specifications and machining to trial tests.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-electric-400 mt-1"></i>
+                                <span>Coordinated product development between internal manufacturing teams and client engineering divisions.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Role 2: Presscale Film Group & Calibration — Staff | YAMAHA INDONESIA -->
+                <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-xl border border-ambertech-500/60 bg-carbon-900 text-ambertech-400 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 font-mono text-xs font-bold">
+                        02
+                    </div>
+                    <div class="w-[calc(100%-3.5rem)] md:w-[calc(50%-2.5rem)] cad-card rounded-2xl p-6">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <span class="px-2.5 py-1 rounded bg-ambertech-500/15 border border-ambertech-500/30 font-mono text-[11px] font-semibold text-ambertech-400">
+                                JUNE 2022 – APRIL 2024
+                            </span>
+                            <span class="font-mono text-xs text-slate-300 font-semibold uppercase">Staff</span>
+                        </div>
+                        <h3 class="font-display text-xl font-bold text-white">Presscale Film Group & Calibration</h3>
+                        <p class="font-mono text-xs text-electric-400 mt-0.5 mb-4">YAMAHA INDONESIA</p>
+                        <ul class="space-y-2 text-xs sm:text-sm text-slate-300">
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-ambertech-400 mt-1"></i>
+                                <span>Performed press jig tests regularly using the prescale method.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-ambertech-400 mt-1"></i>
+                                <span>Analyzed the results of jig press tests to ensure manufacturing accuracy.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-ambertech-400 mt-1"></i>
+                                <span>Investigated and assisted in resolving deviations and exceptions from predefined acceptance criteria.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-ambertech-400 mt-1"></i>
+                                <span>Troubleshot faulty systems to recommend corrective actions.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-ambertech-400 mt-1"></i>
+                                <span>Modified analytical equipment to align with user-defined applications.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Role 3: Mechanical Technician | Yusuf Motor Workshop -->
+                <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-xl border border-emerald-500/60 bg-carbon-900 text-emerald-400 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 font-mono text-xs font-bold">
+                        03
+                    </div>
+                    <div class="w-[calc(100%-3.5rem)] md:w-[calc(50%-2.5rem)] cad-card rounded-2xl p-6">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <span class="px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 font-mono text-[11px] font-semibold text-emerald-400">
+                                MAY 2020 – MAY 2022
+                            </span>
+                            <span class="font-mono text-xs text-slate-300 font-semibold uppercase">Technician</span>
+                        </div>
+                        <h3 class="font-display text-xl font-bold text-white">Mechanical Technician</h3>
+                        <p class="font-mono text-xs text-emerald-400 mt-0.5 mb-4">Yusuf Motor Workshop</p>
+                        <ul class="space-y-2 text-xs sm:text-sm text-slate-300">
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-emerald-400 mt-1"></i>
+                                <span>Carried out maintenance on light vehicle engine injection systems.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-emerald-400 mt-1"></i>
+                                <span>Completed machine setups and executed test runs to verify proper operation.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-emerald-400 mt-1"></i>
+                                <span>Performed diagnostic tests on automotive systems.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-emerald-400 mt-1"></i>
+                                <span>Completed scheduled service and maintenance work orders for workshop clients.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Role 4: New Product Development 2W — Operator | Astra Otopart Div. Nusametal -->
+                <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-xl border border-slate-600 bg-carbon-900 text-slate-300 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 font-mono text-xs font-bold">
+                        04
+                    </div>
+                    <div class="w-[calc(100%-3.5rem)] md:w-[calc(50%-2.5rem)] cad-card rounded-2xl p-6">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <span class="px-2.5 py-1 rounded bg-slate-800 border border-slate-700 font-mono text-[11px] font-semibold text-slate-300">
+                                MAY 2019 – APRIL 2020
+                            </span>
+                            <span class="font-mono text-xs text-slate-400 font-semibold uppercase">Operator</span>
+                        </div>
+                        <h3 class="font-display text-xl font-bold text-white">New Product Development 2W</h3>
+                        <p class="font-mono text-xs text-electric-400 mt-0.5 mb-4">Astra Otopart Div. Nusametal</p>
+                        <ul class="space-y-2 text-xs sm:text-sm text-slate-300">
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-electric-400 mt-1"></i>
+                                <span>Created mass-producible, customer-focused designs by conducting diligent research into industry needs and manufacturing methods.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-electric-400 mt-1"></i>
+                                <span>Fabricated models and samples for customer and design team evaluation.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-electric-400 mt-1"></i>
+                                <span>Documented, researched, and resolved customer service issues.</span>
+                            </li>
+                            <li class="flex items-start gap-2.5">
+                                <i class="fa-solid fa-angle-right text-electric-400 mt-1"></i>
+                                <span>Obtained approvals with polished design presentations to customers and committees.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. FEATURED ENGINEERING PROJECTS -->
+    <section id="projects" class="py-16 sm:py-24 border-t border-slate-800/70 bg-carbon-950/40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+                <div>
+                    <span class="font-mono text-xs text-electric-400 uppercase tracking-widest">// 03. R&D CASE STUDIES</span>
+                    <h2 class="font-display text-3xl sm:text-4xl font-bold text-white mt-1">Featured Engineering Projects</h2>
+                </div>
+
+                <!-- Interactive Filter Buttons -->
+                <div class="flex flex-wrap gap-2 bg-carbon-800 p-1.5 rounded-xl border border-slate-800">
+                    <button onclick="filterProjects('all')" data-filter="all" class="filter-btn active px-3.5 py-2 rounded-lg font-mono text-xs font-semibold bg-electric-500 text-carbon-950 transition-all">
+                        ALL MODELS (02)
+                    </button>
+                    <button onclick="filterProjects('commercial')" data-filter="commercial" class="filter-btn px-3.5 py-2 rounded-lg font-mono text-xs font-semibold text-slate-300 hover:text-white transition-all">
+                        COMMERCIAL / CNC
+                    </button>
+                    <button onclick="filterProjects('motorsport')" data-filter="motorsport" class="filter-btn px-3.5 py-2 rounded-lg font-mono text-xs font-semibold text-slate-300 hover:text-white transition-all">
+                        RALLY / FEA PROTOTYPE
+                    </button>
+                </div>
+            </div>
+
+            <!-- Projects Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+                <!-- PROJECT 1: Damina Performance — PFF-18 Wheel Development -->
+                <article data-category="commercial" class="project-card cad-card rounded-2xl overflow-hidden flex flex-col">
+                    <!-- Blueprint Visual Header -->
+                    <div class="relative bg-carbon-950 border-b border-slate-800 p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+                        <div class="space-y-2 z-10 max-w-xs">
+                            <span class="inline-block px-2.5 py-1 rounded bg-electric-500/15 border border-electric-500/30 font-mono text-[10px] text-electric-400 uppercase">
+                                Commercial Client Collaboration
+                            </span>
+                            <h3 class="font-display text-2xl font-bold text-white">Damina Performance — PFF-18</h3>
+                            <p class="font-mono text-xs text-slate-400">Flow-Forming & CNC Machining Spec</p>
+                        </div>
+
+                        <!-- Custom SVG Blueprint: PFF-18 Multi-Spoke Performance Wheel -->
+                        <div class="relative w-44 h-44 flex-shrink-0">
+                            <svg viewBox="0 0 220 220" class="w-full h-full">
+                                <circle cx="110" cy="110" r="102" fill="none" stroke="#1E293B" stroke-width="1" stroke-dasharray="3 3"/>
+                                <circle cx="110" cy="110" r="92" fill="#0B0F17" stroke="#38BDF8" stroke-width="2"/>
+                                <circle cx="110" cy="110" r="85" fill="none" stroke="#0EA5E9" stroke-width="0.8" stroke-opacity="0.5"/>
+                                
+                                <!-- 10-Spoke Flow-Forming Radial Wireframe -->
+                                <g stroke="#38BDF8" stroke-width="1.2" fill="rgba(56, 189, 248, 0.06)">
+                                    <polygon points="107,82 103,26 109,26 110,82"/>
+                                    <polygon points="113,82 117,26 111,26 110,82"/>
+                                    <g transform="rotate(72 110 110)">
+                                        <polygon points="107,82 103,26 109,26 110,82"/>
+                                        <polygon points="113,82 117,26 111,26 110,82"/>
+                                    </g>
+                                    <g transform="rotate(144 110 110)">
+                                        <polygon points="107,82 103,26 109,26 110,82"/>
+                                        <polygon points="113,82 117,26 111,26 110,82"/>
+                                    </g>
+                                    <g transform="rotate(216 110 110)">
+                                        <polygon points="107,82 103,26 109,26 110,82"/>
+                                        <polygon points="113,82 117,26 111,26 110,82"/>
+                                    </g>
+                                    <g transform="rotate(288 110 110)">
+                                        <polygon points="107,82 103,26 109,26 110,82"/>
+                                        <polygon points="113,82 117,26 111,26 110,82"/>
+                                    </g>
+                                </g>
+
+                                <!-- Multi-PCD Bolt Pattern Indicator -->
+                                <circle cx="110" cy="110" r="21" fill="none" stroke="#F59E0B" stroke-width="0.9" stroke-dasharray="2 2"/>
+                                <circle cx="110" cy="89" r="3" fill="#0B0F17" stroke="#F59E0B" stroke-width="1.2"/>
+                                <circle cx="130" cy="103.5" r="3" fill="#0B0F17" stroke="#F59E0B" stroke-width="1.2"/>
+                                <circle cx="122.3" cy="127" r="3" fill="#0B0F17" stroke="#F59E0B" stroke-width="1.2"/>
+                                <circle cx="97.7" cy="127" r="3" fill="#0B0F17" stroke="#F59E0B" stroke-width="1.2"/>
+                                <circle cx="90" cy="103.5" r="3" fill="#0B0F17" stroke="#F59E0B" stroke-width="1.2"/>
+
+                                <!-- Center Cap Bore Machining Detail -->
+                                <circle cx="110" cy="110" r="29" fill="none" stroke="#38BDF8" stroke-width="1"/>
+                                <circle cx="110" cy="110" r="12" fill="#131926" stroke="#F59E0B" stroke-width="1.5"/>
+                                <text x="110" y="213" text-anchor="middle" font-family="JetBrains Mono" font-size="8" fill="#38BDF8">PFF-18 // MULTI-PCD CAD</text>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Card Body -->
+                    <div class="p-6 flex-1 flex flex-col justify-between space-y-6">
+                        <div class="space-y-4">
+                            <p class="text-sm text-slate-300 leading-relaxed">
+                                End-to-end engineering design, variant code alignment, PCD formatting, and center cap machining trials for European aftermarket performance wheel specifications.
+                            </p>
+
+                            <!-- Technical Highlights -->
+                            <div class="bg-carbon-900/90 rounded-xl p-4 border border-slate-800 space-y-2.5">
+                                <span class="block font-mono text-[11px] text-electric-400 uppercase tracking-wider">Technical Highlights</span>
+                                <ul class="space-y-2 text-xs text-slate-300">
+                                    <li class="flex items-start gap-2.5">
+                                        <i class="fa-solid fa-check text-electric-400 mt-0.5"></i>
+                                        <span><strong>Multi-PCD variant standardization</strong> & variant code alignment across commercial SKUs.</span>
+                                    </li>
+                                    <li class="flex items-start gap-2.5">
+                                        <i class="fa-solid fa-check text-electric-400 mt-0.5"></i>
+                                        <span><strong>Tight-tolerance center cap interface machining</strong> validated through trial production runs.</span>
+                                    </li>
+                                    <li class="flex items-start gap-2.5">
+                                        <i class="fa-solid fa-check text-electric-400 mt-0.5"></i>
+                                        <span>Full compliance alignment with <strong>EU & JWL</strong> aftermarket wheel standards.</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80">
+                            <div class="flex gap-2 font-mono text-[11px]">
+                                <span class="px-2 py-1 rounded bg-slate-800 text-slate-300">EU / JWL</span>
+                                <span class="px-2 py-1 rounded bg-slate-800 text-slate-300">CNC Trial</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="inspectProjectIn3D('twin5')" class="px-3 py-2 rounded-lg bg-carbon-800 hover:bg-carbon-700 text-slate-200 border border-slate-700 font-mono text-xs font-semibold transition-all flex items-center gap-1.5" title="Load in 3D CAD Viewer">
+                                    <i class="fa-solid fa-cube text-electric-400"></i>
+                                    <span>3D View</span>
+                                </button>
+                                <button onclick="openProjectModal('pff18')" class="px-4 py-2 rounded-lg bg-electric-500/10 hover:bg-electric-500 text-electric-400 hover:text-carbon-950 border border-electric-500/30 font-mono text-xs font-semibold transition-all flex items-center gap-2">
+                                    <span>Inspect Technical Specs</span>
+                                    <i class="fa-solid fa-up-right-from-square"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <!-- PROJECT 2: Fortis Rally Wheels — Model 15-03 Prototype -->
+                <article data-category="motorsport" class="project-card cad-card rounded-2xl overflow-hidden flex flex-col">
+                    <!-- Blueprint Header -->
+                    <div class="relative bg-carbon-950 border-b border-slate-800 p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+                        <div class="space-y-2 z-10 max-w-xs">
+                            <span class="inline-block px-2.5 py-1 rounded bg-ambertech-500/15 border border-ambertech-500/30 font-mono text-[10px] text-ambertech-400 uppercase">
+                                Rally & Prototype Development
+                            </span>
+                            <h3 class="font-display text-2xl font-bold text-white">Fortis Rally Wheels — 15-03</h3>
+                            <p class="font-mono text-xs text-slate-400">CATIA V5 GSD 3D Surfacing & 2D Blueprints</p>
+                        </div>
+
+                        <!-- Custom SVG CAD Wireframe of Fortis Rally 15-03 -->
+                        <div class="relative w-44 h-44 flex-shrink-0">
+                            <svg viewBox="0 0 220 220" class="w-full h-full">
+                                <circle cx="110" cy="110" r="102" fill="none" stroke="#1E293B" stroke-width="1" stroke-dasharray="3 3"/>
+                                <circle cx="110" cy="110" r="92" fill="#0B0F17" stroke="#F59E0B" stroke-width="2.5"/>
+                                <circle cx="110" cy="110" r="82" fill="rgba(14, 165, 233, 0.06)" stroke="#38BDF8" stroke-width="1"/>
+
+                                <!-- Heavy-Duty 6-Spoke Rally CAD Wireframe -->
+                                <g stroke="#38BDF8" stroke-width="1.4" fill="rgba(11, 15, 23, 0.75)">
+                                    <rect x="103" y="28" width="14" height="54" rx="3"/>
+                                    <rect x="103" y="28" width="14" height="54" rx="3" transform="rotate(60 110 110)"/>
+                                    <rect x="103" y="28" width="14" height="54" rx="3" transform="rotate(120 110 110)"/>
+                                    <rect x="103" y="28" width="14" height="54" rx="3" transform="rotate(180 110 110)"/>
+                                    <rect x="103" y="28" width="14" height="54" rx="3" transform="rotate(240 110 110)"/>
+                                    <rect x="103" y="28" width="14" height="54" rx="3" transform="rotate(300 110 110)"/>
+                                </g>
+
+                                <!-- Spoke-to-Rim Fillet Transition Nodes -->
+                                <circle cx="110" cy="82" r="3" fill="#38BDF8"/>
+                                <circle cx="134" cy="96" r="3" fill="#F59E0B"/>
+                                <circle cx="134" cy="124" r="3" fill="#38BDF8"/>
+                                <circle cx="110" cy="138" r="3" fill="#F59E0B"/>
+                                <circle cx="86" cy="124" r="3" fill="#38BDF8"/>
+                                <circle cx="86" cy="96" r="3" fill="#F59E0B"/>
+
+                                <!-- Reinforced Rally Center Hub -->
+                                <circle cx="110" cy="110" r="30" fill="#0B0F17" stroke="#F59E0B" stroke-width="1.8"/>
+                                <circle cx="110" cy="110" r="11" fill="#131926" stroke="#38BDF8" stroke-width="1.5"/>
+                                <text x="110" y="213" text-anchor="middle" font-family="JetBrains Mono" font-size="8" fill="#FBBF24">MODEL 15-03 // CATIA GSD</text>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Card Body -->
+                    <div class="p-6 flex-1 flex flex-col justify-between space-y-6">
+                        <div class="space-y-4">
+                            <p class="text-sm text-slate-300 leading-relaxed">
+                                Advanced 3D surface modeling and 2D technical drawing execution for heavy-duty rally wheel applications prior to prototype trial production.
+                            </p>
+
+                            <!-- Technical Highlights -->
+                            <div class="bg-carbon-900/90 rounded-xl p-4 border border-slate-800 space-y-2.5">
+                                <span class="block font-mono text-[11px] text-ambertech-400 uppercase tracking-wider">Technical Highlights</span>
+                                <ul class="space-y-2 text-xs text-slate-300">
+                                    <li class="flex items-start gap-2.5">
+                                        <i class="fa-solid fa-check text-ambertech-400 mt-0.5"></i>
+                                        <span><strong>Class-A 3D surface modeling</strong> in CATIA V5 Generative Shape Design (GSD) with smooth spoke-to-rim transitions.</span>
+                                    </li>
+                                    <li class="flex items-start gap-2.5">
+                                        <i class="fa-solid fa-check text-ambertech-400 mt-0.5"></i>
+                                        <span><strong>Draft angle & fillet radius refinement</strong> for reliable casting mold release and CNC machining accessibility.</span>
+                                    </li>
+                                    <li class="flex items-start gap-2.5">
+                                        <i class="fa-solid fa-check text-ambertech-400 mt-0.5"></i>
+                                        <span>Full compliance alignment with <strong>SNI, JWL & EU</strong> rally/aftermarket wheel standards.</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80">
+                            <div class="flex gap-2 font-mono text-[11px]">
+                                <span class="px-2 py-1 rounded bg-slate-800 text-ambertech-400">SNI / JWL / EU</span>
+                                <span class="px-2 py-1 rounded bg-slate-800 text-slate-300">CATIA GSD</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="inspectProjectIn3D('rally6')" class="px-3 py-2 rounded-lg bg-carbon-800 hover:bg-carbon-700 text-slate-200 border border-slate-700 font-mono text-xs font-semibold transition-all flex items-center gap-1.5" title="Load Rally 3D Model">
+                                    <i class="fa-solid fa-cube text-ambertech-400"></i>
+                                    <span>3D View</span>
+                                </button>
+                                <button onclick="openProjectModal('fortis1503')" class="px-4 py-2 rounded-lg bg-ambertech-500/10 hover:bg-ambertech-500 text-ambertech-400 hover:text-carbon-950 border border-ambertech-500/30 font-mono text-xs font-semibold transition-all flex items-center gap-2">
+                                    <span>Inspect Technical Specs</span>
+                                    <i class="fa-solid fa-up-right-from-square"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. CERTIFICATIONS & R&D SUMMARY -->
+    <section id="credentials" class="py-16 sm:py-24 border-t border-slate-800/70">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="mb-12">
+                <span class="font-mono text-xs text-electric-400 uppercase tracking-widest">// 04. CAREER & ACCREDITATION</span>
+                <h2 class="font-display text-3xl sm:text-4xl font-bold text-white mt-1">Credentials & Technical Summary</h2>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                <!-- Engineering Summary Card -->
+                <div class="lg:col-span-7">
+                    <div class="cad-card rounded-2xl p-6 sm:p-8 h-full relative">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                            <span class="px-3 py-1 rounded-full bg-electric-500/15 border border-electric-500/30 font-mono text-xs font-semibold text-electric-400">
+                                ENGINEERING FOCUS • R&D
+                            </span>
+                            <span class="font-mono text-xs text-slate-400">AUTOMOTIVE WHEEL DEVELOPMENT</span>
+                        </div>
+
+                        <h3 class="font-display text-2xl font-bold text-white">Engineering Design & Product Development</h3>
+                        <p class="font-mono text-xs text-electric-400 mt-1 mb-5">Aftermarket & OEM Automotive Alloy Wheels Division</p>
+
+                        <p class="text-sm text-slate-300 leading-relaxed mb-6">
+                            Leading 3D CAD product engineering, 2D technical blueprint documentation, and machining trial execution for international and domestic aftermarket wheel programs compliant with <strong class="text-white">SNI, JWL, and EU</strong> regulatory frameworks.
+                        </p>
+
+                        <div class="space-y-3 border-t border-slate-800 pt-5">
+                            <div class="flex items-start gap-3 text-sm text-slate-300">
+                                <i class="fa-solid fa-circle-check text-electric-400 mt-1"></i>
+                                <span>Developed Class-A 3D surface & solid models in <strong>CATIA V5 GSD</strong> for commercial clients (Damina Performance PFF-18) and motorsport prototypes (Fortis Rally 15-03).</span>
+                            </div>
+                            <div class="flex items-start gap-3 text-sm text-slate-300">
+                                <i class="fa-solid fa-circle-check text-electric-400 mt-1"></i>
+                                <span>Coordinated cross-functional product development between internal manufacturing teams and client engineering divisions from initial specs to trial tests.</span>
+                            </div>
+                            <div class="flex items-start gap-3 text-sm text-slate-300">
+                                <i class="fa-solid fa-circle-check text-electric-400 mt-1"></i>
+                                <span>Standardized multi-PCD variant codes, 2D technical drawings, and tight-tolerance center cap CNC machining specifications.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BNSP Certification Card -->
+                <div class="lg:col-span-5">
+                    <div class="cad-card bracket-box rounded-2xl p-6 sm:p-8 h-full flex flex-col justify-between bg-gradient-to-b from-carbon-800 to-carbon-900">
+                        <div>
+                            <div class="flex items-center justify-between mb-5">
+                                <div class="w-12 h-12 rounded-xl bg-ambertech-500/15 border border-ambertech-500/40 flex items-center justify-center text-ambertech-400">
+                                    <i class="fa-solid fa-certificate text-2xl"></i>
+                                </div>
+                                <span class="px-3 py-1 rounded-md bg-ambertech-500/15 border border-ambertech-500/30 font-mono text-xs font-bold text-ambertech-400">
+                                    NOV 2026
+                                </span>
+                            </div>
+
+                            <span class="font-mono text-xs text-slate-400 uppercase tracking-wider">National Competency Certification</span>
+                            <h3 class="font-display text-xl font-bold text-white mt-1 mb-2">
+                                BNSP Certified Mechanic
+                            </h3>
+                            <p class="font-mono text-xs text-ambertech-400 bg-ambertech-500/10 border border-ambertech-500/20 p-3 rounded-lg mb-4">
+                                Skema: Pemeliharaan Mesin Kendaraan Ringan Sistem Injeksi (Light Vehicle EFI Engine Maintenance)
+                            </p>
+                            <p class="text-sm text-slate-300 leading-relaxed">
+                                Certified by Badan Nasional Sertifikasi Profesi (BNSP) in light vehicle Electronic Fuel Injection (EFI) engine diagnostics, maintenance, and mechanical system inspection—reinforcing product design decisions with hands-on automotive serviceability.
+                            </p>
+                        </div>
+
+                        <div class="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between font-mono text-xs text-slate-400">
+                            <span>ISSUER: BNSP INDONESIA</span>
+                            <span class="text-emerald-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-shield-check"></i> VERIFIED
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. CONTACT & DEPLOYMENT FOOTER -->
+    <footer class="border-t border-slate-800 bg-carbon-950 pt-14 pb-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-8 pb-12 border-b border-slate-800/80">
+                
+                <div class="md:col-span-6 space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-electric-500/15 border border-electric-500/40 flex items-center justify-center text-electric-400 font-mono font-bold">
+                            E
+                        </div>
+                        <span class="font-display font-bold text-white text-xl">Ekanto Prasetyo Adi</span>
+                    </div>
+                    <p class="text-sm text-slate-400 max-w-md leading-relaxed">
+                        Automotive Wheel Design & Product Development Engineer. Open for technical discussions on aftermarket & OEM wheel development, CATIA V5 surfacing, 2D blueprints, and machining trial collaboration.
+                    </p>
+                    <div class="flex flex-wrap gap-3 pt-1">
+                        <button onclick="openContactModal()" class="px-5 py-2.5 rounded-xl bg-electric-500 hover:bg-electric-400 text-carbon-950 font-bold text-xs transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-envelope"></i>
+                            <span>Send Engineering Inquiry</span>
+                        </button>
+                        <button onclick="openDeployModal()" class="px-4 py-2.5 rounded-xl bg-carbon-800 hover:bg-carbon-700 text-slate-200 border border-slate-700 font-mono text-xs transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-cloud-arrow-up text-electric-400"></i>
+                            <span>Host / Export Guide</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="md:col-span-3 space-y-3">
+                    <h4 class="font-mono text-xs font-bold text-white uppercase tracking-wider">Quick Navigation</h4>
+                    <ul class="space-y-2 text-sm text-slate-400">
+                        <li><a href="#about" class="hover:text-electric-400 transition-colors">About Me</a></li>
+                        <li><a href="#cad-viewer" class="hover:text-electric-400 transition-colors">3D CAD STEP Viewer</a></li>
+                        <li><a href="#competencies" class="hover:text-electric-400 transition-colors">Core Competencies</a></li>
+                        <li><a href="#experience" class="hover:text-electric-400 transition-colors">Experience Timeline</a></li>
+                        <li><a href="#projects" class="hover:text-electric-400 transition-colors">Damina PFF-18 & Fortis 15-03</a></li>
+                        <li><a href="#credentials" class="hover:text-electric-400 transition-colors">BNSP & R&D Credentials</a></li>
+                    </ul>
+                </div>
+
+                <div class="md:col-span-3 space-y-3">
+                    <h4 class="font-mono text-xs font-bold text-white uppercase tracking-wider">Compliance Standards</h4>
+                    <div class="flex flex-wrap gap-2 font-mono text-xs">
+                        <span class="px-2.5 py-1 rounded bg-carbon-800 border border-slate-700 text-slate-300">SNI</span>
+                        <span class="px-2.5 py-1 rounded bg-carbon-800 border border-slate-700 text-slate-300">JWL</span>
+                        <span class="px-2.5 py-1 rounded bg-carbon-800 border border-slate-700 text-slate-300">EU HOMOLOGATION</span>
+                        <span class="px-2.5 py-1 rounded bg-carbon-800 border border-ambertech-500/30 text-ambertech-400">BNSP EFI</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-xs text-slate-500">
+                <span>© 2026 Ekanto Prasetyo Adi — Engineering Design & Product Development.</span>
+                <span>SINGLE-FILE PRECISION PORTFOLIO • INTEGRATED 3D STEP CAD VIEWER</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- PROJECT DEEP-DIVE TECHNICAL MODAL -->
+    <div id="project-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div class="bg-carbon-850 border border-electric-500/40 rounded-2xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button onclick="closeProjectModal()" class="absolute top-5 right-5 w-9 h-9 rounded-lg bg-carbon-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div id="project-modal-content"></div>
+        </div>
+    </div>
+
+    <!-- CONTACT MODAL -->
+    <div id="contact-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div class="bg-carbon-850 border border-electric-500/40 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative">
+            <button onclick="closeContactModal()" class="absolute top-5 right-5 w-9 h-9 rounded-lg bg-carbon-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+            <span class="font-mono text-xs text-electric-400 uppercase tracking-wider">// DIRECT CONNECTION</span>
+            <h3 class="font-display text-2xl font-bold text-white mt-1 mb-2">Contact Ekanto Prasetyo Adi</h3>
+            <p class="text-xs text-slate-400 mb-5">
+                Customize your email or LinkedIn handle directly in the code, or test the interactive message dispatch below.
+            </p>
+
+            <!-- Quick Copy Direct Credentials -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 font-mono text-xs">
+                <button onclick="copyText('ekanto.prasetyo@example.com', this)" class="p-3 rounded-xl bg-carbon-900 hover:bg-carbon-800 border border-slate-700 text-left flex items-center justify-between transition-colors">
+                    <span class="truncate text-slate-300">ekanto.prasetyo@example.com</span>
+                    <i class="fa-regular fa-copy text-electric-400 ml-2"></i>
+                </button>
+                <button onclick="copyText('linkedin.com/in/ekanto-prasetyo-adi', this)" class="p-3 rounded-xl bg-carbon-900 hover:bg-carbon-800 border border-slate-700 text-left flex items-center justify-between transition-colors">
+                    <span class="truncate text-slate-300">in/ekanto-prasetyo-adi</span>
+                    <i class="fa-regular fa-copy text-electric-400 ml-2"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleContactSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block font-mono text-xs text-slate-300 mb-1">Your Name / Organization</label>
+                    <input type="text" required placeholder="e.g., R&D Lead / Engineering Recruiter" class="w-full px-3.5 py-2.5 rounded-xl bg-carbon-900 border border-slate-700 focus:border-electric-500 focus:outline-none text-sm text-white">
+                </div>
+                <div>
+                    <label class="block font-mono text-xs text-slate-300 mb-1">Email Address</label>
+                    <input type="email" required placeholder="name@company.com" class="w-full px-3.5 py-2.5 rounded-xl bg-carbon-900 border border-slate-700 focus:border-electric-500 focus:outline-none text-sm text-white">
+                </div>
+                <div>
+                    <label class="block font-mono text-xs text-slate-300 mb-1">Project / Technical Scope</label>
+                    <textarea rows="3" required placeholder="Inquiry regarding wheel design, CATIA V5 surfacing, machining trials, or engineering role..." class="w-full px-3.5 py-2.5 rounded-xl bg-carbon-900 border border-slate-700 focus:border-electric-500 focus:outline-none text-sm text-white"></textarea>
+                </div>
+                <button type="submit" class="w-full py-3 rounded-xl bg-electric-500 hover:bg-electric-400 text-carbon-950 font-bold text-sm transition-all">
+                    Transmit Message
+                </button>
+            </form>
+            <div id="contact-feedback" class="hidden mt-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 font-mono text-xs text-emerald-300 text-center"></div>
+        </div>
+    </div>
+
+    <!-- DEPLOYMENT & EXPORT GUIDE MODAL -->
+    <div id="deploy-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div class="bg-carbon-850 border border-slate-700 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative">
+            <button onclick="closeDeployModal()" class="absolute top-5 right-5 w-9 h-9 rounded-lg bg-carbon-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <span class="font-mono text-xs text-electric-400 uppercase">// ONLINE HOSTING GUIDE</span>
+            <h3 class="font-display text-xl font-bold text-white mt-1 mb-3">Publish Your Portfolio Online (Free)</h3>
+            <p class="text-xs text-slate-300 leading-relaxed mb-4">
+                This entire portfolio—including the Three.js + OpenCascade WASM 3D STEP Viewer—is engineered as a self-contained <code class="text-electric-400">index.html</code> file with zero external build dependencies. You can take it live in under 2 minutes:
+            </p>
+            <ol class="space-y-3 text-xs text-slate-300 font-mono bg-carbon-900 p-4 rounded-xl border border-slate-800">
+                <li><strong class="text-electric-400">1. Save File:</strong> Save this HTML code as <code>index.html</code> on your computer.</li>
+                <li><strong class="text-electric-400">2. Update Links:</strong> Replace <code>ekanto.prasetyo@example.com</code> & LinkedIn URL in the file with your real contact details.</li>
+                <li><strong class="text-electric-400">3. Instant Hosting:</strong> Drag and drop the folder containing <code>index.html</code> into <strong>Netlify Drop</strong>, <strong>Vercel</strong>, or push to a <strong>GitHub Pages</strong> repository for a free public HTTPS URL.</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- PORTFOLIO & INTEGRATED 3D CAD STEP VIEWER LOGIC -->
+    <script>
+        /**
+         * ============================================================================
+         * 1. PORTFOLIO INTERACTIVITY (PORTRAIT, FILTERS, MODALS)
+         * ============================================================================
+         */
+        function handlePortraitFallback(imgEl) {
+            imgEl.classList.add('hidden');
+            const placeholderEl = document.getElementById('about-portrait-placeholder');
+            if (placeholderEl) {
+                placeholderEl.classList.remove('hidden');
+                placeholderEl.classList.add('flex');
+            }
+        }
+
+        function handlePortraitUpload(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const imgEl = document.getElementById('about-portrait-img');
+                const placeholderEl = document.getElementById('about-portrait-placeholder');
+                imgEl.src = e.target.result;
+                imgEl.classList.remove('hidden');
+                if (placeholderEl) {
+                    placeholderEl.classList.add('hidden');
+                    placeholderEl.classList.remove('flex');
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        mobileMenuBtn.addEventListener('click', () => {
+            mobileMenu.classList.toggle('hidden');
+        });
+
+        function filterProjects(category) {
+            const buttons = document.querySelectorAll('.filter-btn');
+            buttons.forEach(btn => {
+                if (btn.dataset.filter === category) {
+                    btn.classList.add('bg-electric-500', 'text-carbon-950');
+                    btn.classList.remove('text-slate-300');
+                } else {
+                    btn.classList.remove('bg-electric-500', 'text-carbon-950');
+                    btn.classList.add('text-slate-300');
+                }
+            });
+
+            const cards = document.querySelectorAll('.project-card');
+            cards.forEach(card => {
+                if (category === 'all' || card.dataset.category === category) {
+                    card.style.display = 'flex';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        const projectDetails = {
+            pff18: {
+                badge: 'COMMERCIAL CLIENT COLLABORATION // EU & JWL',
+                title: 'Damina Performance — PFF-18 Wheel Development',
+                subtitle: 'CATIA V5 Surfacing & Precision CNC Machining Trials',
+                overview: 'Full engineering ownership from styling data translation to commercial variant standardization and center cap machining trials for European aftermarket specifications.',
+                specs: [
+                    { label: 'CAD Workbench', value: 'CATIA V5 GSD & 2D Technical Drawings' },
+                    { label: 'PCD Formatting', value: 'Multi-PCD Variant Code Alignment (5x112 / 5x114.3)' },
+                    { label: 'Machining Trial Focus', value: 'Tight-tolerance Center Cap Bore & Seat Interface' },
+                    { label: 'Homologation Standards', value: 'EU Aftermarket & JWL Compliance Verified' }
+                ],
+                deliverables: [
+                    'Complete 3D solid & surface CAD packages with controlled machining stock allowances.',
+                    '2D production drawings specifying GD&T concentricity, flatness, and center bore tolerances.',
+                    'Variant code matrix aligning offset (ET), center bore (CB), and PCD permutations for production.'
+                ]
+            },
+            fortis1503: {
+                badge: 'MOTORSPORTS / RALLY PROTOTYPE // CATIA V5 GSD',
+                title: 'Fortis Rally Wheels — Model 15-03 Prototype',
+                subtitle: 'CATIA V5 GSD 3D Surfacing & Prototype Trial Readiness',
+                overview: 'Heavy-duty motorsport rally wheel engineered with Class-A 3D surface modeling and precision 2D technical drawings prior to prototype machining and trial production.',
+                specs: [
+                    { label: 'CAD Workbench', value: 'CATIA V5 Generative Shape Design (GSD)' },
+                    { label: 'Documentation', value: '2D Technical Drawings & GD&T Blueprints' },
+                    { label: 'Geometry Optimization', value: 'Draft Angle ≥3.5° & Multi-Radius Fillet Blending' },
+                    { label: 'Compliance Standards', value: 'SNI, JWL & EU Wheel Standards' }
+                ],
+                deliverables: [
+                    'Class-A tangent/curvature-continuous spoke surfaces built in CATIA V5 GSD.',
+                    'Detailed 2D engineering drawings and machining tolerances for prototype trial fabrication.',
+                    'Coordinated prototype specification alignment between design and shop-floor machining teams.'
+                ]
+            }
+        };
+
+        function openProjectModal(key) {
+            const data = projectDetails[key];
+            if (!data) return;
+
+            const specsHtml = data.specs.map(s => `
+                <div class="bg-carbon-900 p-3 rounded-xl border border-slate-800">
+                    <span class="block font-mono text-[10px] text-slate-400 uppercase">${s.label}</span>
+                    <span class="font-mono text-xs font-semibold text-white mt-0.5 block">${s.value}</span>
+                </div>
+            `).join('');
+
+            const delivHtml = data.deliverables.map(d => `
+                <li class="flex items-start gap-2.5 text-xs sm:text-sm text-slate-300">
+                    <i class="fa-solid fa-check text-electric-400 mt-1"></i>
+                    <span>${d}</span>
+                </li>
+            `).join('');
+
+            document.getElementById('project-modal-content').innerHTML = `
+                <span class="font-mono text-xs text-electric-400 uppercase tracking-wider">${data.badge}</span>
+                <h3 class="font-display text-2xl font-bold text-white mt-1">${data.title}</h3>
+                <p class="font-mono text-xs text-slate-400 mb-4">${data.subtitle}</p>
+                <p class="text-sm text-slate-300 leading-relaxed mb-5">${data.overview}</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">${specsHtml}</div>
+                <div class="bg-carbon-900/80 p-4 rounded-xl border border-slate-800 space-y-2.5">
+                    <span class="block font-mono text-xs text-ambertech-400 uppercase">Key Engineering Deliverables</span>
+                    <ul class="space-y-2">${delivHtml}</ul>
+                </div>
+            `;
+
+            const modal = document.getElementById('project-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeProjectModal() {
+            const modal = document.getElementById('project-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function openContactModal() {
+            const modal = document.getElementById('contact-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeContactModal() {
+            const modal = document.getElementById('contact-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function openDeployModal() {
+            const modal = document.getElementById('deploy-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeDeployModal() {
+            const modal = document.getElementById('deploy-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function copyText(text, btnElement) {
+            const tempInput = document.createElement('input');
+            tempInput.value = text;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            const originalHtml = btnElement.innerHTML;
+            btnElement.innerHTML = `<span class="text-emerald-400 font-semibold">Copied!</span><i class="fa-solid fa-check text-emerald-400"></i>`;
+            setTimeout(() => {
+                btnElement.innerHTML = originalHtml;
+            }, 1500);
+        }
+
+        function handleContactSubmit(e) {
+            e.preventDefault();
+            const feedback = document.getElementById('contact-feedback');
+            feedback.textContent = '✓ Message logged! Connect Formspree/EmailJS or your direct email to receive live submissions.';
+            feedback.classList.remove('hidden');
+            e.target.reset();
+        }
+
+        /**
+         * ============================================================================
+         * 2. INTEGRATED 3D CAD STEP VIEWER (THREE.JS + OPENCASCADE WASM)
+         * ============================================================================
+         */
+        const cadState = {
+            occt: null,
+            wasmReady: false,
+            wireframe: false,
+            showEdges: false,
+            autoRotate: true,
+            isDemo: true,
+            activeDemoType: 'twin5',
+            materialConfig: {
+                name: 'Machined Silver',
+                color: '#d8dee9',
+                metalness: 0.92,
+                roughness: 0.20,
+                clearcoat: 0.40
+            },
+            // Hero viewport Three.js objects
+            hero: {
+                scene: null, camera: null, renderer: null, controls: null, modelGroup: null
+            },
+            // Main CAD Inspector Three.js objects
+            main: {
+                scene: null, camera: null, renderer: null, controls: null,
+                modelGroup: null, edgeGroup: null, gridHelper: null
+            }
+        };
+
+        const METAL_PRESETS = {
+            machined:      { name: 'Machined Silver',  color: '#d8dee9', metalness: 0.92, roughness: 0.20, clearcoat: 0.40 },
+            gunmetal:      { name: 'Hyper Gunmetal',   color: '#475569', metalness: 0.88, roughness: 0.26, clearcoat: 0.35 },
+            glossblack:    { name: 'Gloss Black',      color: '#111622', metalness: 0.78, roughness: 0.12, clearcoat: 0.90 },
+            satinbronze:   { name: 'Satin Bronze',     color: '#9a5b25', metalness: 0.86, roughness: 0.32, clearcoat: 0.20 },
+            champagnegold: { name: 'Motorsport Gold',  color: '#c9972c', metalness: 0.90, roughness: 0.24, clearcoat: 0.35 },
+            rawtitanium:   { name: 'Brushed Titanium', color: '#a3adb8', metalness: 0.95, roughness: 0.34, clearcoat: 0.10 }
+        };
+
+        function showCadToast(message, type = 'info') {
+            const container = document.getElementById('cad-toast-container');
+            const toast = document.createElement('div');
+            const styles = {
+                info: 'bg-carbon-900/95 border-electric-500/50 text-sky-100',
+                success: 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100',
+                error: 'bg-rose-950/95 border-rose-500/50 text-rose-100'
+            };
+            toast.className = `px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md font-mono text-xs flex items-center gap-2.5 transition-all duration-300 ${styles[type] || styles.info}`;
+            toast.innerHTML = `<i class="fa-solid fa-cube text-electric-400"></i><span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-8px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 4200);
+        }
+
+        function triggerStepUpload() {
+            document.getElementById('global-step-input').click();
+        }
+
+        function inspectProjectIn3D(demoType) {
+            loadBuiltinDemo(demoType);
+            const section = document.getElementById('cad-viewer');
+            if (section) {
+                section.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        async function initOpenCascadeEngine() {
+            const badge = document.getElementById('occt-status-badge');
+            try {
+                if (typeof occtimportjs === 'function') {
+                    cadState.occt = await occtimportjs({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/occt-import-js@0.0.22/dist/${file}`
+                    });
+                    cadState.wasmReady = true;
+                    badge.textContent = 'OpenCascade WASM Ready';
+                    badge.className = 'px-2.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+                } else {
+                    throw new Error('occtimportjs unavailable');
+                }
+            } catch (err) {
+                console.warn('OpenCascade WASM initialization warning:', err);
+                badge.textContent = 'WASM Offline';
+                badge.className = 'px-2.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40';
+            }
+        }
+
+        function createWheelMetalMaterial() {
+            const cfg = cadState.materialConfig;
+            return new THREE.MeshPhysicalMaterial({
+                color: new THREE.Color(cfg.color),
+                metalness: cfg.metalness,
+                roughness: cfg.roughness,
+                clearcoat: cfg.clearcoat,
+                clearcoatRoughness: 0.15,
+                wireframe: cadState.wireframe,
+                side: THREE.DoubleSide
+            });
+        }
+
+        /**
+         * Procedural 3D Wheel Generator (Twin-5-Spoke Performance & Rally 6-Spoke Heavy-Duty)
+         */
+        function buildProceduralWheel(variant = 'twin5') {
+            const wheelGroup = new THREE.Group();
+            wheelGroup.name = variant === 'rally6' ? 'Fortis_Rally_15_03_Demo' : 'Damina_PFF18_Twin5Spoke_Demo';
+
+            const mainMetalMat = createWheelMetalMaterial();
+            const darkAccentMat = new THREE.MeshStandardMaterial({
+                color: 0x161b24,
+                metalness: 0.75,
+                roughness: 0.35,
+                wireframe: cadState.wireframe
+            });
+            const hardwareMat = new THREE.MeshStandardMaterial({
+                color: 0xe2e8f0,
+                metalness: 0.96,
+                roughness: 0.12,
+                wireframe: cadState.wireframe
+            });
+
+            // 1. Rim Barrel Profile (LatheGeometry)
+            const rimPoints = [
+                new THREE.Vector2(1.42, -0.72),
+                new THREE.Vector2(1.52, -0.72),
+                new THREE.Vector2(1.52, -0.65),
+                new THREE.Vector2(1.44, -0.62),
+                new THREE.Vector2(1.44, -0.45),
+                new THREE.Vector2(1.30, -0.25),
+                new THREE.Vector2(1.30,  0.22),
+                new THREE.Vector2(1.44,  0.42),
+                new THREE.Vector2(1.44,  0.64),
+                new THREE.Vector2(1.54,  0.66),
+                new THREE.Vector2(1.54,  0.73),
+                new THREE.Vector2(1.43,  0.73),
+                new THREE.Vector2(1.38,  0.58),
+                new THREE.Vector2(1.24,  0.22),
+                new THREE.Vector2(1.24, -0.25),
+                new THREE.Vector2(1.38, -0.60),
+                new THREE.Vector2(1.42, -0.72)
+            ];
+            const barrelGeo = new THREE.LatheGeometry(rimPoints, 72);
+            barrelGeo.rotateX(Math.PI / 2);
+            const barrelMesh = new THREE.Mesh(barrelGeo, mainMetalMat);
+            barrelMesh.name = 'Rim_Barrel';
+            wheelGroup.add(barrelMesh);
+
+            // 2. Center Mounting Hub (Multi-PCD)
+            const hubRadius = variant === 'rally6' ? 0.64 : 0.56;
+            const hubPoints = [
+                new THREE.Vector2(0.24, -0.18),
+                new THREE.Vector2(hubRadius, -0.18),
+                new THREE.Vector2(hubRadius,  0.28),
+                new THREE.Vector2(hubRadius - 0.08, 0.36),
+                new THREE.Vector2(0.26,  0.36),
+                new THREE.Vector2(0.24,  0.28),
+                new THREE.Vector2(0.24, -0.18)
+            ];
+            const hubGeo = new THREE.LatheGeometry(hubPoints, 48);
+            hubGeo.rotateX(Math.PI / 2);
+            const hubMesh = new THREE.Mesh(hubGeo, mainMetalMat);
+            hubMesh.name = 'Center_Hub';
+            wheelGroup.add(hubMesh);
+
+            // 3. Center Cap & Bezel Ring
+            const capGeo = new THREE.CylinderGeometry(0.23, 0.24, 0.08, 36);
+            capGeo.rotateX(Math.PI / 2);
+            const capMesh = new THREE.Mesh(capGeo, darkAccentMat);
+            capMesh.position.z = 0.34;
+            capMesh.name = 'Center_Cap_Accent';
+            wheelGroup.add(capMesh);
+
+            const capRingGeo = new THREE.TorusGeometry(0.18, 0.015, 16, 36);
+            const capRingMesh = new THREE.Mesh(capRingGeo, hardwareMat);
+            capRingMesh.position.z = 0.38;
+            capRingMesh.name = 'Center_Cap_Ring';
+            wheelGroup.add(capRingMesh);
+
+            // 4. 5-Bolt PCD Pockets & Lug Nuts
+            const boltRadius = variant === 'rally6' ? 0.45 : 0.41;
+            for (let i = 0; i < 5; i++) {
+                const angle = (i / 5) * Math.PI * 2;
+                const bx = Math.cos(angle) * boltRadius;
+                const by = Math.sin(angle) * boltRadius;
+
+                const pocketGeo = new THREE.CylinderGeometry(0.068, 0.068, 0.14, 24);
+                pocketGeo.rotateX(Math.PI / 2);
+                const pocketMesh = new THREE.Mesh(pocketGeo, darkAccentMat);
+                pocketMesh.position.set(bx, by, 0.30);
+                pocketMesh.name = 'Bolt_Pocket_Accent';
+                wheelGroup.add(pocketMesh);
+
+                const nutGeo = new THREE.CylinderGeometry(0.048, 0.048, 0.16, 6);
+                nutGeo.rotateX(Math.PI / 2);
+                const nutMesh = new THREE.Mesh(nutGeo, hardwareMat);
+                nutMesh.position.set(bx, by, 0.31);
+                nutMesh.name = 'Lug_Nut_Hardware';
+                wheelGroup.add(nutMesh);
+            }
+
+            // 5. Spokes Geometry (Twin-5-Spoke Performance vs. Heavy-Duty Rally 6-Spoke)
+            if (variant === 'rally6') {
+                const spokeCount = 6;
+                for (let i = 0; i < spokeCount; i++) {
+                    const angle = (i / spokeCount) * Math.PI * 2;
+                    const spokeGroup = new THREE.Group();
+                    spokeGroup.rotation.z = angle;
+
+                    const shape = new THREE.Shape();
+                    shape.moveTo(-0.13, 0.54);
+                    shape.lineTo( 0.13, 0.54);
+                    shape.lineTo( 0.10, 1.41);
+                    shape.lineTo(-0.10, 1.41);
+                    shape.closePath();
+
+                    const spokeGeo = new THREE.ExtrudeGeometry(shape, {
+                        steps: 1,
+                        depth: 0.18,
+                        bevelEnabled: true,
+                        bevelThickness: 0.025,
+                        bevelSize: 0.022,
+                        bevelSegments: 3
+                    });
+
+                    const posAttr = spokeGeo.attributes.position;
+                    for (let v = 0; v < posAttr.count; v++) {
+                        const y = posAttr.getY(v);
+                        const z = posAttr.getZ(v);
+                        const normR = Math.max(0, (y - 0.54) / (1.41 - 0.54));
+                        const curveZ = Math.sin(normR * Math.PI * 0.5) * 0.26;
+                        posAttr.setZ(v, z + 0.18 + curveZ);
+                    }
+                    spokeGeo.computeVertexNormals();
+
+                    const spokeMesh = new THREE.Mesh(spokeGeo, mainMetalMat);
+                    spokeMesh.name = `Rally_Spoke_${i + 1}`;
+                    spokeGroup.add(spokeMesh);
+                    wheelGroup.add(spokeGroup);
+                }
+
+                // Reinforced Rally Beadlock Lip Ring
+                const beadRingGeo = new THREE.TorusGeometry(1.47, 0.032, 16, 64);
+                const beadRingMesh = new THREE.Mesh(beadRingGeo, hardwareMat);
+                beadRingMesh.position.z = 0.72;
+                beadRingMesh.name = 'Rally_Reinforcement_Ring';
+                wheelGroup.add(beadRingMesh);
+            } else {
+                const numPairs = 5;
+                for (let i = 0; i < numPairs; i++) {
+                    const baseAngle = (i / numPairs) * Math.PI * 2 + Math.PI / 10;
+                    [-0.17, 0.17].forEach((offsetAngle, idx) => {
+                        const spokeGroup = new THREE.Group();
+                        spokeGroup.rotation.z = baseAngle + offsetAngle;
+
+                        const shape = new THREE.Shape();
+                        shape.moveTo(-0.065, 0.46);
+                        shape.lineTo( 0.065, 0.46);
+                        shape.lineTo( 0.042, 1.42);
+                        shape.lineTo(-0.042, 1.42);
+                        shape.closePath();
+
+                        const spokeGeo = new THREE.ExtrudeGeometry(shape, {
+                            steps: 1,
+                            depth: 0.14,
+                            bevelEnabled: true,
+                            bevelThickness: 0.022,
+                            bevelSize: 0.018,
+                            bevelSegments: 3
+                        });
+
+                        const posAttr = spokeGeo.attributes.position;
+                        for (let v = 0; v < posAttr.count; v++) {
+                            const y = posAttr.getY(v);
+                            const z = posAttr.getZ(v);
+                            const normR = Math.max(0, (y - 0.46) / (1.42 - 0.46));
+                            const curveZ = Math.sin(normR * Math.PI * 0.5) * 0.34;
+                            posAttr.setZ(v, z + 0.16 + curveZ);
+                        }
+                        spokeGeo.computeVertexNormals();
+
+                        const spokeMesh = new THREE.Mesh(spokeGeo, mainMetalMat);
+                        spokeMesh.name = `Twin_Spoke_${i + 1}_${idx + 1}`;
+                        spokeGroup.add(spokeMesh);
+                        wheelGroup.add(spokeGroup);
+                    });
+                }
+            }
+
+            // 6. Valve Stem
+            const valveGeo = new THREE.CylinderGeometry(0.022, 0.026, 0.16, 16);
+            const valveMesh = new THREE.Mesh(valveGeo, hardwareMat);
+            valveMesh.position.set(0, 1.38, 0.56);
+            valveMesh.rotation.x = -0.25;
+            valveMesh.name = 'Valve_Stem_Hardware';
+            wheelGroup.add(valveMesh);
+
+            wheelGroup.rotation.y = -0.35;
+            wheelGroup.rotation.x = 0.12;
+            return wheelGroup;
+        }
+
+        function setupStudioLightsAndEnv(targetScene, targetRenderer) {
+            if (THREE.RoomEnvironment) {
+                const pmremGenerator = new THREE.PMREMGenerator(targetRenderer);
+                targetScene.environment = pmremGenerator.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+            }
+            const ambient = new THREE.AmbientLight(0xffffff, 0.48);
+            targetScene.add(ambient);
+
+            const keyLight = new THREE.DirectionalLight(0xffffff, 1.35);
+            keyLight.position.set(6, 9, 7);
+            targetScene.add(keyLight);
+
+            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
+            fillLight.position.set(-7, 4, -5);
+            targetScene.add(fillLight);
+
+            const rimLight = new THREE.DirectionalLight(0xfbbf24, 0.45);
+            rimLight.position.set(0, -5, -6);
+            targetScene.add(rimLight);
+        }
+
+        function initHeroThreeViewport() {
+            const container = document.getElementById('hero-cad-canvas');
+            if (!container) return;
+
+            const width = container.clientWidth || 400;
+            const height = container.clientHeight || 310;
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x070A0F);
+
+            const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+            camera.position.set(3.2, 2.1, 3.8);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
+            container.appendChild(renderer.domElement);
+
+            setupStudioLightsAndEnv(scene, renderer);
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.06;
+            controls.enablePan = false;
+            controls.minDistance = 2.0;
+            controls.maxDistance = 12.0;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 2.0;
+
+            const demoWheel = buildProceduralWheel('twin5');
+            scene.add(demoWheel);
+
+            cadState.hero = { scene, camera, renderer, controls, modelGroup: demoWheel };
+        }
+
+        function initMainCadInspector() {
+            const container = document.getElementById('main-cad-canvas');
+            if (!container) return;
+
+            const width = container.clientWidth || 720;
+            const height = container.clientHeight || 500;
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x070A0F);
+            scene.fog = new THREE.FogExp2(0x070A0F, 0.032);
+
+            const camera = new THREE.PerspectiveCamera(42, width / height, 0.05, 500);
+            camera.position.set(4.0, 2.6, 4.5);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.18;
+            container.appendChild(renderer.domElement);
+
+            setupStudioLightsAndEnv(scene, renderer);
+
+            const gridHelper = new THREE.GridHelper(16, 32, 0x0ea5e9, 0x1e293b);
+            gridHelper.position.y = -1.65;
+            gridHelper.material.opacity = 0.42;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.06;
+            controls.screenSpacePanning = true;
+            controls.minDistance = 0.5;
+            controls.maxDistance = 60;
+            controls.autoRotate = cadState.autoRotate;
+            controls.autoRotateSpeed = 1.8;
+
+            cadState.main = {
+                scene, camera, renderer, controls,
+                modelGroup: null, edgeGroup: null, gridHelper
+            };
+
+            loadBuiltinDemo('twin5');
+        }
+
+        function setMainInspectorModel(group, sourceName, isDemo = false) {
+            const { scene, gridHelper } = cadState.main;
+            if (!scene) return;
+
+            if (cadState.main.modelGroup) {
+                scene.remove(cadState.main.modelGroup);
+            }
+            if (cadState.main.edgeGroup) {
+                scene.remove(cadState.main.edgeGroup);
+                cadState.main.edgeGroup = null;
+            }
+
+            cadState.isDemo = isDemo;
+            cadState.main.modelGroup = group;
+            scene.add(group);
+
+            // Normalize scale & center model cleanly
+            const box = new THREE.Box3().setFromObject(group);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z) || 1;
+            const scaleFactor = 3.1 / maxDim;
+            group.scale.multiplyScalar(scaleFactor);
+
+            const scaledBox = new THREE.Box3().setFromObject(group);
+            const scaledCenter = new THREE.Vector3();
+            const scaledSize = new THREE.Vector3();
+            scaledBox.getCenter(scaledCenter);
+            scaledBox.getSize(scaledSize);
+
+            group.position.sub(scaledCenter);
+            gridHelper.position.y = -(scaledSize.y / 2) - 0.15;
+
+            // Build CAD feature edges
+            buildMainCadEdges(group);
+
+            // Calculate telemetry stats
+            let partCount = 0;
+            let triCount = 0;
+            group.traverse((child) => {
+                if (child.isMesh && child.geometry) {
+                    partCount++;
+                    const g = child.geometry;
+                    if (g.index) triCount += g.index.count / 3;
+                    else if (g.attributes.position) triCount += g.attributes.position.count / 3;
+                }
+            });
+
+            document.getElementById('cad-stat-source').textContent = sourceName;
+            document.getElementById('cad-stat-parts').textContent = `${partCount} parts`;
+            document.getElementById('cad-stat-tris').textContent = Math.round(triCount).toLocaleString();
+            document.getElementById('cad-stat-bbox').textContent = `${size.x.toFixed(1)}×${size.y.toFixed(1)}×${size.z.toFixed(1)}`;
+
+            setCadCameraView('iso');
+        }
+
+        function buildMainCadEdges(targetGroup) {
+            const { scene } = cadState.main;
+            if (cadState.main.edgeGroup) scene.remove(cadState.main.edgeGroup);
+
+            const edgeGroup = new THREE.Group();
+            const edgeMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45 });
+
+            targetGroup.updateMatrixWorld(true);
+            targetGroup.traverse((child) => {
+                if (child.isMesh && child.geometry) {
+                    const edgesGeo = new THREE.EdgesGeometry(child.geometry, 28);
+                    const line = new THREE.LineSegments(edgesGeo, edgeMat);
+                    line.applyMatrix4(child.matrixWorld);
+                    edgeGroup.add(line);
+                }
+            });
+
+            edgeGroup.visible = cadState.showEdges;
+            cadState.main.edgeGroup = edgeGroup;
+            scene.add(edgeGroup);
+        }
+
+        function loadBuiltinDemo(variant) {
+            cadState.activeDemoType = variant;
+            const wheel = buildProceduralWheel(variant);
+            const label = variant === 'rally6' ? 'Rally 6-Spoke (15-03)' : 'Twin-5-Spoke (PFF-18)';
+            setMainInspectorModel(wheel, label, true);
+
+            // Sync hero viewport model too if showing demo
+            if (cadState.hero.scene && cadState.hero.modelGroup) {
+                cadState.hero.scene.remove(cadState.hero.modelGroup);
+                const heroWheel = buildProceduralWheel(variant);
+                cadState.hero.scene.add(heroWheel);
+                cadState.hero.modelGroup = heroWheel;
+            }
+
+            // Update active button styling
+            const btnTwin5 = document.getElementById('btn-demo-twin5');
+            const btnRally6 = document.getElementById('btn-demo-rally6');
+            const uploadedPill = document.getElementById('uploaded-step-pill');
+            if (uploadedPill) {
+                uploadedPill.classList.add('hidden');
+                uploadedPill.classList.remove('flex');
+            }
+
+            if (variant === 'twin5') {
+                btnTwin5.className = 'demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-electric-500 text-carbon-950 transition-all';
+                btnRally6.className = 'demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-carbon-800 text-slate-300 hover:text-white border border-slate-700 transition-all';
+            } else {
+                btnRally6.className = 'demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-ambertech-500 text-carbon-950 transition-all';
+                btnTwin5.className = 'demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-carbon-800 text-slate-300 hover:text-white border border-slate-700 transition-all';
+            }
+        }
+
+        async function processUploadedStepFile(file) {
+            if (!file) return;
+            const fileName = file.name;
+            if (!fileName.toLowerCase().endsWith('.stp') && !fileName.toLowerCase().endsWith('.step')) {
+                showCadToast('Unsupported file format. Please select a .stp or .step CAD file.', 'error');
+                return;
+            }
+
+            if (!cadState.wasmReady || !cadState.occt) {
+                showCadToast('OpenCascade WASM is still loading. Please wait a moment and try again.', 'error');
+                return;
+            }
+
+            // Scroll smoothly to the CAD Inspector so user sees the 3D result
+            const viewerSection = document.getElementById('cad-viewer');
+            if (viewerSection) viewerSection.scrollIntoView({ behavior: 'smooth' });
+
+            const overlay = document.getElementById('cad-loading-overlay');
+            document.getElementById('cad-loading-title').textContent = `Parsing ${fileName}...`;
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            try {
+                const buffer = new Uint8Array(await file.arrayBuffer());
+                const result = cadState.occt.ReadStepFile(buffer, {
+                    linearUnit: 'millimeter',
+                    linearDeflectionType: 'bounding_box_ratio',
+                    linearDeflection: 0.0015,
+                    angularDeflection: 0.35
+                });
+
+                if (!result || !result.success || !result.meshes || result.meshes.length === 0) {
+                    throw new Error('No valid solid or surface geometry found inside STEP file.');
+                }
+
+                const cadGroup = new THREE.Group();
+                cadGroup.name = fileName;
+
+                for (let i = 0; i < result.meshes.length; i++) {
+                    const m = result.meshes[i];
+                    const geometry = new THREE.BufferGeometry();
+
+                    if (m.attributes && m.attributes.position) {
+                        geometry.setAttribute('position', new THREE.Float32BufferAttribute(m.attributes.position.array, 3));
+                    }
+                    if (m.attributes && m.attributes.normal) {
+                        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(m.attributes.normal.array, 3));
+                    }
+                    if (m.index && m.index.array) {
+                        geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(m.index.array), 1));
+                    }
+                    if (!geometry.attributes.normal) {
+                        geometry.computeVertexNormals();
+                    }
+
+                    const mesh = new THREE.Mesh(geometry, createWheelMetalMaterial());
+                    mesh.name = m.name || `STEP_Part_${i + 1}`;
+                    cadGroup.add(mesh);
+                }
+
+                setMainInspectorModel(cadGroup, fileName, false);
+
+                // Update UI badges for uploaded STEP file
+                const uploadedPill = document.getElementById('uploaded-step-pill');
+                document.getElementById('uploaded-step-filename').textContent = fileName;
+                uploadedPill.classList.remove('hidden');
+                uploadedPill.classList.add('flex');
+
+                document.getElementById('btn-demo-twin5').className = 'demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-carbon-800 text-slate-300 hover:text-white border border-slate-700 transition-all';
+                document.getElementById('btn-demo-rally6').className = 'demo-select-btn px-3 py-1.5 rounded-lg font-mono text-xs font-semibold bg-carbon-800 text-slate-300 hover:text-white border border-slate-700 transition-all';
+                document.getElementById('hero-model-tag').textContent = `ACTIVE_STEP // ${fileName.slice(0, 18)}`;
+
+                showCadToast(`Loaded "${fileName}" (${result.meshes.length} CAD parts)`, 'success');
+            } catch (err) {
+                console.error('STEP parsing failed:', err);
+                showCadToast(`Failed to parse STEP file: ${err.message}`, 'error');
+            } finally {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
+        }
+
+        function syncMaterialsAcrossScenes() {
+            const cfg = cadState.materialConfig;
+            const applyToGroup = (group, isDemo) => {
+                if (!group) return;
+                group.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        if (isDemo && (child.name.includes('Accent') || child.name.includes('Hardware') || child.name.includes('Ring'))) {
+                            child.material.wireframe = cadState.wireframe;
+                            return;
+                        }
+                        child.material.color.set(cfg.color);
+                        child.material.metalness = cfg.metalness;
+                        child.material.roughness = cfg.roughness;
+                        if ('clearcoat' in child.material) child.material.clearcoat = cfg.clearcoat;
+                        child.material.wireframe = cadState.wireframe;
+                        child.material.needsUpdate = true;
+                    }
+                });
+            };
+
+            applyToGroup(cadState.main.modelGroup, cadState.isDemo);
+            applyToGroup(cadState.hero.modelGroup, true);
+
+            document.getElementById('active-preset-badge').textContent = cfg.name;
+            document.getElementById('hud-finish-label').textContent = `Finish: ${cfg.name}`;
+            document.getElementById('cad-metalness-slider').value = cfg.metalness;
+            document.getElementById('cad-metalness-val').textContent = Number(cfg.metalness).toFixed(2);
+            document.getElementById('cad-roughness-slider').value = cfg.roughness;
+            document.getElementById('cad-roughness-val').textContent = Number(cfg.roughness).toFixed(2);
+        }
+
+        function applyMetalPreset(presetKey) {
+            const preset = METAL_PRESETS[presetKey];
+            if (!preset) return;
+            cadState.materialConfig = { ...preset };
+            syncMaterialsAcrossScenes();
+
+            document.querySelectorAll('.metal-preset-btn').forEach(btn => {
+                if (btn.dataset.metal === presetKey) {
+                    btn.classList.remove('border-slate-700/80', 'bg-carbon-850');
+                    btn.classList.add('border-electric-500', 'bg-carbon-800');
+                } else {
+                    btn.classList.remove('border-electric-500', 'bg-carbon-800');
+                    btn.classList.add('border-slate-700/80', 'bg-carbon-850');
+                }
+            });
+        }
+
+        function setCadCameraView(view) {
+            const { camera, controls, modelGroup } = cadState.main;
+            if (!camera || !controls || !modelGroup) return;
+
+            const box = new THREE.Box3().setFromObject(modelGroup);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z) || 3.1;
+            const dist = Math.abs(maxDim / 2 / Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.65;
+
+            controls.target.set(0, 0, 0);
+            if (view === 'front') camera.position.set(0, 0, dist);
+            else if (view === 'side') camera.position.set(dist, 0, 0);
+            else if (view === 'top') camera.position.set(0, dist, 0.01);
+            else camera.position.set(dist * 0.78, dist * 0.52, dist * 0.85);
+
+            controls.update();
+        }
+
+        function toggleCadWireframe() {
+            cadState.wireframe = !cadState.wireframe;
+            syncMaterialsAcrossScenes();
+            const btn = document.getElementById('btn-toggle-wireframe');
+            btn.classList.toggle('border-electric-500', cadState.wireframe);
+            btn.classList.toggle('bg-electric-500/20', cadState.wireframe);
+        }
+
+        function toggleCadEdges() {
+            cadState.showEdges = !cadState.showEdges;
+            if (cadState.main.edgeGroup) {
+                cadState.main.edgeGroup.visible = cadState.showEdges;
+            }
+            const btn = document.getElementById('btn-toggle-edges');
+            btn.classList.toggle('border-ambertech-500', cadState.showEdges);
+            btn.classList.toggle('bg-ambertech-500/20', cadState.showEdges);
+        }
+
+        function toggleCadAutoRotate() {
+            cadState.autoRotate = !cadState.autoRotate;
+            if (cadState.main.controls) cadState.main.controls.autoRotate = cadState.autoRotate;
+            if (cadState.hero.controls) cadState.hero.controls.autoRotate = cadState.autoRotate;
+
+            const btn = document.getElementById('btn-toggle-rotate');
+            if (cadState.autoRotate) {
+                btn.className = 'py-2 px-2 rounded-xl bg-electric-500/20 border border-electric-500/50 text-electric-300 font-semibold transition-all flex flex-col items-center gap-1';
+                btn.innerHTML = `<i class="fa-solid fa-rotate text-electric-400"></i><span>Rotate: ON</span>`;
+            } else {
+                btn.className = 'py-2 px-2 rounded-xl bg-carbon-850 hover:bg-carbon-800 border border-slate-700 text-slate-400 font-semibold transition-all flex flex-col items-center gap-1';
+                btn.innerHTML = `<i class="fa-solid fa-pause text-slate-400"></i><span>Rotate: OFF</span>`;
+            }
+        }
+
+        function toggleCadFullscreen() {
+            const wrapper = document.getElementById('cad-workstation-wrapper');
+            const btn = document.getElementById('btn-cad-fullscreen');
+            wrapper.classList.toggle('cad-fullscreen');
+            const isFull = wrapper.classList.contains('cad-fullscreen');
+            btn.innerHTML = isFull ? '<i class="fa-solid fa-compress"></i>' : '<i class="fa-solid fa-expand"></i>';
+            setTimeout(handleThreeResize, 60);
+        }
+
+        function handleThreeResize() {
+            const heroEl = document.getElementById('hero-cad-canvas');
+            if (heroEl && cadState.hero.renderer && cadState.hero.camera) {
+                const w = heroEl.clientWidth;
+                const h = heroEl.clientHeight;
+                if (w > 0 && h > 0) {
+                    cadState.hero.camera.aspect = w / h;
+                    cadState.hero.camera.updateProjectionMatrix();
+                    cadState.hero.renderer.setSize(w, h);
+                }
+            }
+
+            const mainEl = document.getElementById('main-cad-canvas');
+            if (mainEl && cadState.main.renderer && cadState.main.camera) {
+                const w = mainEl.clientWidth;
+                const h = mainEl.clientHeight;
+                if (w > 0 && h > 0) {
+                    cadState.main.camera.aspect = w / h;
+                    cadState.main.camera.updateProjectionMatrix();
+                    cadState.main.renderer.setSize(w, h);
+                }
+            }
+        }
+
+        function animateThreeScenes() {
+            requestAnimationFrame(animateThreeScenes);
+
+            if (cadState.hero.controls && cadState.hero.renderer && cadState.hero.scene && cadState.hero.camera) {
+                cadState.hero.controls.update();
+                cadState.hero.renderer.render(cadState.hero.scene, cadState.hero.camera);
+            }
+
+            if (cadState.main.controls && cadState.main.renderer && cadState.main.scene && cadState.main.camera) {
+                cadState.main.controls.update();
+                cadState.main.renderer.render(cadState.main.scene, cadState.main.camera);
+            }
+        }
+
+        // Bind Global STEP Input, Sliders & Drag-and-Drop
+        document.getElementById('global-step-input').addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                processUploadedStepFile(e.target.files[0]);
+                e.target.value = '';
+            }
+        });
+
+        document.getElementById('cad-metalness-slider').addEventListener('input', (e) => {
+            cadState.materialConfig.metalness = parseFloat(e.target.value);
+            syncMaterialsAcrossScenes();
+        });
+
+        document.getElementById('cad-roughness-slider').addEventListener('input', (e) => {
+            cadState.materialConfig.roughness = parseFloat(e.target.value);
+            syncMaterialsAcrossScenes();
+        });
+
+        // Global Drag & Drop for .stp / .step files
+        const globalDragOverlay = document.getElementById('global-drag-overlay');
+        let dragDepth = 0;
+        window.addEventListener('dragenter', (e) => {
+            if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+                e.preventDefault();
+                dragDepth++;
+                globalDragOverlay.classList.remove('hidden');
+                globalDragOverlay.classList.add('flex');
+            }
+        });
+        window.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dragDepth--;
+            if (dragDepth <= 0) {
+                dragDepth = 0;
+                globalDragOverlay.classList.add('hidden');
+                globalDragOverlay.classList.remove('flex');
+            }
+        });
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragDepth = 0;
+            globalDragOverlay.classList.add('hidden');
+            globalDragOverlay.classList.remove('flex');
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                processUploadedStepFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // Close modals or fullscreen CAD on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeProjectModal();
+                closeContactModal();
+                closeDeployModal();
+                const wrapper = document.getElementById('cad-workstation-wrapper');
+                if (wrapper && wrapper.classList.contains('cad-fullscreen')) {
+                    toggleCadFullscreen();
+                }
+            }
+        });
+
+        window.addEventListener('resize', handleThreeResize);
+
+        window.onload = function () {
+            initHeroThreeViewport();
+            initMainCadInspector();
+            animateThreeScenes();
+            initOpenCascadeEngine();
+        };
+    </script>
+</body>
+</html>
